@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>我的微信编辑器</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-frame">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">微</div>
+          <div>
+            <p class="eyebrow">公众号运营排版工具</p>
+            <h1>我的微信编辑器</h1>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button class="button secondary" id="saveDraftBtn" type="button">保存草稿</button>
+          <button class="button ghost" id="loadDraftBtn" type="button">恢复草稿</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="editor-shell" aria-label="微信文章编辑区">
+          <div class="editor-head">
+            <div>
+              <p class="section-kicker">正文编辑</p>
+              <h2>公众号正文编辑区</h2>
+            </div>
+            <span class="editor-badge">富文本 / HTML</span>
+          </div>
+
+          <div class="toolbar" aria-label="文字工具栏">
+            <div class="tool-group">
+              <button type="button" data-command="bold" title="加粗">B</button>
+              <button type="button" data-command="italic" title="斜体">I</button>
+              <button type="button" data-command="underline" title="下划线">U</button>
+              <button type="button" data-command="insertUnorderedList" title="无序列表">列表</button>
+            </div>
+            <div class="tool-group">
+              <button type="button" data-command="justifyLeft" title="左对齐">左</button>
+              <button type="button" data-command="justifyCenter" title="居中">中</button>
+              <button type="button" data-command="justifyRight" title="右对齐">右</button>
+            </div>
+            <label class="color-picker">
+              <span>颜色</span>
+              <input id="foreColor" type="color" value="#1358f5" />
+            </label>
+          </div>
+
+          <div class="canvas-wrap">
+            <div class="phone-frame">
+              <div class="article-meta">
+                <input id="articleTitle" type="text" value="一篇值得发布的公众号文章" aria-label="文章标题" />
+                <input id="articleAuthor" type="text" value="我的公众号" aria-label="作者" />
+              </div>
+              <article
+                id="editor"
+                class="wechat-editor"
+                contenteditable="true"
+                spellcheck="false"
+                aria-label="公众号正文编辑区"
+              ></article>
+              <textarea
+                id="sourceEditor"
+                class="source-editor"
+                aria-label="HTML 源代码编辑区"
+                spellcheck="false"
+              ></textarea>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel action-panel" aria-label="编辑操作">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">发布操作</p>
+              <h2>一键发布准备</h2>
+            </div>
+            <span class="status-pill" id="statusText">已就绪</span>
+          </div>
+
+          <div class="action-stack">
+            <button class="button primary wide" id="copyBtn" type="button">微信一键复制</button>
+            <button class="button secondary wide" id="sourceModeBtn" type="button" aria-pressed="false">
+              HTML 源代码编辑
+            </button>
+            <button class="button danger wide" id="clearBtn" type="button">清空内容</button>
+          </div>
+
+          <div class="divider"></div>
+
+          <label class="field">
+            <span>快速插入链接</span>
+            <input id="linkInput" type="url" placeholder="https://example.com" />
+          </label>
+          <button class="button ghost wide" id="insertLinkBtn" type="button">给选中文字加链接</button>
+
+          <div class="tips">
+            <h3>使用提示</h3>
+            <p>复制后直接粘贴到公众号后台编辑器，样式会以 HTML 富文本形式保留。</p>
+            <p>源码模式可直接粘贴 HTML 片段，再切回可视化编辑。</p>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <template id="emptyTemplate">
+      <section style="margin: 0 auto; padding: 24px 0; color: #333; line-height: 1.8; font-size: 16px;">
+        <p style="margin: 0 0 16px;">在这里输入你的公众号正文，可以使用上方工具栏调整文字样式。</p>
+        <p style="margin: 0;">完成后点击右侧 <strong style="color: #1358f5;">微信一键复制</strong>，再粘贴到公众号后台。</p>
+      </section>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
