@@ -3,31 +3,63 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>我的微信编辑器</title>
+    <title>傅小念的编辑器</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="app-frame">
       <header class="topbar">
         <div class="brand">
-          <div class="brand-mark">微</div>
+          <div class="brand-mark">傅</div>
           <div>
             <p class="eyebrow">公众号运营排版工具</p>
-            <h1>我的微信编辑器</h1>
+            <h1>傅小念的编辑器</h1>
           </div>
         </div>
         <div class="top-actions">
           <button class="button secondary" id="saveDraftBtn" type="button">保存草稿</button>
-          <button class="button ghost" id="loadDraftBtn" type="button">恢复草稿</button>
+          <button class="button ghost" id="loadDraftBtn" type="button">草稿列表</button>
         </div>
       </header>
 
       <main class="workspace">
-        <section class="editor-shell" aria-label="微信文章编辑区">
+        <aside class="panel template-panel" aria-label="模板中心">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">模板中心</p>
+              <h2>样式组件库</h2>
+            </div>
+            <span class="status-pill" id="templateCount">0 个系统导入</span>
+          </div>
+
+          <div class="template-body">
+            <div class="template-controls">
+              <button class="button secondary small" id="insertTemplateBtn" type="button">再次添加</button>
+              <button class="button ghost small" id="deleteTemplateBtn" type="button">删除模板</button>
+            </div>
+
+            <div class="template-list" id="templateList" aria-label="可选正文模板"></div>
+
+            <details class="template-import">
+              <summary>导入 HTML 模板</summary>
+              <label class="field compact">
+                <span>模板名称</span>
+                <input id="templateNameInput" type="text" placeholder="例如：开篇样式" />
+              </label>
+              <label class="field compact">
+                <span>HTML 模板</span>
+                <textarea id="templateHtmlInput" spellcheck="false" placeholder="<section>...</section>"></textarea>
+              </label>
+              <button class="button secondary wide flush" id="saveTemplateBtn" type="button">保存系统模板</button>
+            </details>
+          </div>
+        </aside>
+
+        <section class="editor-shell" aria-label="微信正文编辑区">
           <div class="editor-head">
             <div>
               <p class="section-kicker">正文编辑</p>
-              <h2>公众号正文编辑区</h2>
+              <h2>专注正文排版</h2>
             </div>
             <span class="editor-badge">富文本 / HTML</span>
           </div>
@@ -44,18 +76,15 @@
               <button type="button" data-command="justifyCenter" title="居中">中</button>
               <button type="button" data-command="justifyRight" title="右对齐">右</button>
             </div>
-            <label class="color-picker">
-              <span>颜色</span>
-              <input id="foreColor" type="color" value="#1358f5" />
-            </label>
+            <div class="color-picker">
+              <label for="foreColor">颜色</label>
+              <input id="foreColor" type="color" value="#35c9a7" />
+              <input id="colorCodeInput" class="color-code-input" type="text" value="#35c9a7" maxlength="7" pattern="#[0-9a-fA-F]{6}" aria-label="当前颜色编码" title="输入 # 号开头的六位颜色编码" spellcheck="false" />
+            </div>
           </div>
 
           <div class="canvas-wrap">
             <div class="phone-frame">
-              <div class="article-meta">
-                <input id="articleTitle" type="text" value="一篇值得发布的公众号文章" aria-label="文章标题" />
-                <input id="articleAuthor" type="text" value="我的公众号" aria-label="作者" />
-              </div>
               <article
                 id="editor"
                 class="wechat-editor"
@@ -76,18 +105,18 @@
         <aside class="panel action-panel" aria-label="编辑操作">
           <div class="panel-head">
             <div>
-              <p class="section-kicker">发布操作</p>
-              <h2>一键发布准备</h2>
+              <p class="section-kicker">编辑操作</p>
+              <h2>常用工具</h2>
             </div>
             <span class="status-pill" id="statusText">已就绪</span>
           </div>
 
           <div class="action-stack">
-            <button class="button primary wide" id="copyBtn" type="button">微信一键复制</button>
+            <button class="button primary wide" id="copyBtn" type="button">复制正文</button>
             <button class="button secondary wide" id="sourceModeBtn" type="button" aria-pressed="false">
-              HTML 源代码编辑
+              编辑源码
             </button>
-            <button class="button danger wide" id="clearBtn" type="button">清空内容</button>
+            <button class="button danger wide" id="clearBtn" type="button">清空正文</button>
           </div>
 
           <div class="divider"></div>
@@ -96,12 +125,19 @@
             <span>快速插入链接</span>
             <input id="linkInput" type="url" placeholder="https://example.com" />
           </label>
-          <button class="button ghost wide" id="insertLinkBtn" type="button">给选中文字加链接</button>
+          <button class="button ghost wide" id="insertLinkBtn" type="button">插入链接</button>
 
           <div class="tips">
             <h3>使用提示</h3>
             <p>复制后直接粘贴到公众号后台编辑器，样式会以 HTML 富文本形式保留。</p>
             <p>源码模式可直接粘贴 HTML 片段，再切回可视化编辑。</p>
+          </div>
+
+          <div class="home-link-area">
+            <a class="button ghost wide home-link" href="/" aria-label="返回主站">
+              <span class="home-link-icon" aria-hidden="true">←</span>
+              <span>返回主站</span>
+            </a>
           </div>
         </aside>
       </main>
@@ -109,10 +145,24 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+    <div class="modal-backdrop" id="draftModal" hidden>
+      <section class="draft-modal" role="dialog" aria-modal="true" aria-labelledby="draftModalTitle">
+        <div class="draft-modal-head">
+          <div>
+            <p class="section-kicker">草稿管理</p>
+            <h2 id="draftModalTitle">已保存的草稿</h2>
+          </div>
+          <button class="modal-close" id="draftModalCloseBtn" type="button" aria-label="关闭草稿列表">×</button>
+        </div>
+        <div class="draft-list" id="draftList"></div>
+        <p class="draft-empty" id="draftEmpty" hidden>还没有保存过草稿。</p>
+      </section>
+    </div>
+
     <template id="emptyTemplate">
       <section style="margin: 0 auto; padding: 24px 0; color: #333; line-height: 1.8; font-size: 16px;">
         <p style="margin: 0 0 16px;">在这里输入你的公众号正文，可以使用上方工具栏调整文字样式。</p>
-        <p style="margin: 0;">完成后点击右侧 <strong style="color: #1358f5;">微信一键复制</strong>，再粘贴到公众号后台。</p>
+        <p style="margin: 0;">完成后点击右侧 <strong style="color: #35c9a7;">复制正文</strong>，再粘贴到公众号后台。</p>
       </section>
     </template>
 
