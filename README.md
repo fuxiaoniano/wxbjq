@@ -412,6 +412,13 @@ node --test
 
 Data URL 会增加 HTML 和草稿体积，刷新后仍可通过草稿或导出的 HTML 保留，但不适合大量大图。
 
+## 密钥安全
+
+- 不要提交真实的 `.env`、SMTP 授权码、Session Secret、微信公众号 AppID 或 AppSecret。
+- `.env.example` 只保留占位说明，真实配置应放在本机或服务器环境变量中。
+- 测试用例不要写完整的真实密钥形态；需要模拟微信公众号 AppID 或 AppSecret 时，应在运行时拼接测试值，避免触发 GitHub secret scanning。
+- 如果 GitHub 提示已泄露密钥，应立即在对应服务商后台轮换该密钥，再清理仓库代码。
+
 ## 当前限制
 
 - 会员数据仍使用 JSON 文件，仅支持单机、单 Node 进程；规模扩大前应迁移到事务数据库。
