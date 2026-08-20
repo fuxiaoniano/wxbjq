@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="app-base-path" content="/" />
+    <meta name="deployment-mode" content="local" />
+    <meta name="server-storage-enabled" content="true" />
+    <meta name="auth-enabled" content="true" />
+    <meta name="wechat-enabled" content="false" />
+    <meta name="csrf-cookie-name" content="wechat_editor_csrf" />
+    <title>傅小念的编辑器</title>
+    <link rel="stylesheet" href="./styles.css?v=2.1.0-stage5" />
+  </head>
+  <body>
+    <div class="app-frame">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">傅</div>
+          <div>
+            <p class="eyebrow">公众号运营排版工具</p>
+            <h1>傅小念的编辑器</h1>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button class="button ghost" id="newDraftBtn" type="button">新建草稿</button>
+          <button class="button secondary" id="saveDraftBtn" type="button">保存当前草稿</button>
+          <button class="button ghost" id="saveAsDraftBtn" type="button">另存为</button>
+          <button class="button ghost" id="loadDraftBtn" type="button">草稿列表</button>
+          <button class="button primary" id="sendWechatDraftBtn" type="button">保存到公众号</button>
+          <span class="top-action-divider" aria-hidden="true"></span>
+          <button class="button ghost" id="authEntryBtn" type="button">登录 / 注册</button>
+          <button class="button secondary" id="membershipEntryBtn" type="button" hidden>会员中心</button>
+          <button class="button secondary" id="wechatAccountEntryBtn" type="button" hidden>公众号</button>
+          <button class="button ghost" id="adminEntryBtn" type="button" hidden>管理后台</button>
+        </div>
+      </header>
+
+      <section class="account-notice" id="emailVerificationNotice" aria-live="polite" hidden>
+        <span>邮箱尚未验证，会员功能暂不可用。</span>
+        <button class="button ghost small" id="resendVerificationBtn" type="button">重新发送验证邮件</button>
+      </section>
+
+      <main class="workspace">
+        <aside class="panel template-panel" aria-label="模板中心">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">模板中心</p>
+              <h2>样式组件库</h2>
+            </div>
+            <span class="status-pill" id="templateCount">0 个模板</span>
+          </div>
+
+          <div class="template-body">
+            <div class="template-toolbox">
+            <div class="template-filter">
+              <label class="field compact flush-field">
+                <span>搜索</span>
+                <input id="templateSearchInput" type="search" placeholder="名称或分类" />
+              </label>
+              <label class="field compact flush-field">
+                <span>分类</span>
+                <select id="templateCategoryFilter"></select>
+              </label>
+              <label class="check-row">
+                <input id="customOnlyToggle" type="checkbox" />
+                <span>自定义</span>
+              </label>
+            </div>
+
+            <div class="template-tools">
+              <label class="field compact flush-field">
+                <span>插入方式</span>
+                <select id="templateInsertMode">
+                  <option value="after" selected>后插入</option>
+                  <option value="before">前插入</option>
+                </select>
+              </label>
+              <label class="field compact flush-field">
+                <span>主题色</span>
+                <select id="themeSelect">
+                  <option value="default-red">默认红</option>
+                  <option value="brand-red">品牌红</option>
+                  <option value="fresh-green">清新绿</option>
+                  <option value="business-blue">商务蓝</option>
+                  <option value="black-gold">黑金</option>
+                  <option value="custom">自定义颜色</option>
+                </select>
+              </label>
+              <input id="themeColorInput" class="theme-color-input" type="color" value="#d92d20" aria-label="自定义主题色" />
+              <input id="themeColorCodeInput" class="color-code-input theme-color-code-input" type="text" value="#d92d20" maxlength="9" pattern="#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" aria-label="当前主题色编码" title="支持 #RRGGBB 或 #RRGGBBAA，聚焦后可复制" spellcheck="false" />
+            </div>
+
+            <div class="template-controls">
+              <button class="button ghost small" id="updateArticleThemeBtn" type="button">更新主题</button>
+              <button class="button secondary small" id="insertTemplateBtn" type="button">插入模板</button>
+              <button class="button ghost small" id="deleteTemplateBtn" type="button">删除模板</button>
+            </div>
+            </div>
+
+            <div class="template-list" id="templateList" aria-label="可选正文模板"></div>
+
+            <details class="template-import">
+              <summary>导入 HTML 模板</summary>
+              <label class="field compact">
+                <span>模板名称</span>
+                <input id="templateNameInput" type="text" maxlength="80" />
+              </label>
+              <label class="field compact">
+                <span>模板分类</span>
+                <input id="templateCategoryInput" type="text" maxlength="80" value="正文模板" />
+              </label>
+              <label class="field compact">
+                <span>HTML 模板</span>
+                <textarea id="templateHtmlInput" spellcheck="false"></textarea>
+              </label>
+              <p class="mini-report" id="templateCleanReport"></p>
+              <button class="button secondary wide flush" id="saveTemplateBtn" type="button">保存模板</button>
+            </details>
+          </div>
+        </aside>
+
+        <section class="editor-shell" aria-label="微信正文编辑区">
+          <div class="editor-head">
+            <div>
+              <p class="section-kicker">正文编辑</p>
+              <h2 id="currentDraftTitle">未命名草稿</h2>
+            </div>
+            <span class="editor-badge" id="editorModeBadge">富文本</span>
+          </div>
+
+          <div class="toolbar" aria-label="文字工具栏">
+            <div class="tool-group">
+              <button type="button" data-command="undo" title="撤销">↶</button>
+              <button type="button" data-command="redo" title="重做">↷</button>
+            </div>
+            <div class="tool-group">
+              <button type="button" data-command="bold" title="加粗">B</button>
+              <button type="button" data-command="italic" title="斜体">I</button>
+              <button type="button" data-command="underline" title="下划线">U</button>
+              <button type="button" data-command="removeFormat" title="清除格式">Tx</button>
+            </div>
+            <div class="tool-group">
+              <button type="button" data-command="insertUnorderedList" title="无序列表">•</button>
+              <button type="button" data-command="insertOrderedList" title="有序列表">1.</button>
+              <button type="button" data-command="insertHorizontalRule" title="插入分割线">─</button>
+            </div>
+            <div class="tool-group">
+              <button type="button" data-command="justifyLeft" title="左对齐">左</button>
+              <button type="button" data-command="justifyCenter" title="居中">中</button>
+              <button type="button" data-command="justifyRight" title="右对齐">右</button>
+            </div>
+            <label class="toolbar-select">
+              <span class="sr-only">字号</span>
+              <select id="fontSizeSelect">
+                <option value="">字号</option>
+                <option value="12">12</option>
+                <option value="14">14</option>
+                <option value="15">15</option>
+                <option value="16">16</option>
+                <option value="18">18</option>
+                <option value="20">20</option>
+                <option value="24">24</option>
+                <option value="28">28</option>
+              </select>
+            </label>
+            <div class="color-picker">
+              <label for="foreColor">文字</label>
+              <input id="foreColor" type="color" value="#35c9a7" />
+              <input id="colorCodeInput" class="color-code-input" type="text" value="#35c9a7" maxlength="9" pattern="#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" aria-label="当前文字颜色编码" title="支持 #RRGGBB 或 #RRGGBBAA，聚焦后可复制" spellcheck="false" />
+            </div>
+            <div class="color-picker">
+              <label for="backColor">背景</label>
+              <input id="backColor" type="color" value="#fff1ef" />
+              <input id="backColorCodeInput" class="color-code-input" type="text" value="#fff1ef" maxlength="9" pattern="#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" aria-label="当前背景颜色编码" title="支持 #RRGGBB 或 #RRGGBBAA，聚焦后可复制" spellcheck="false" />
+            </div>
+          </div>
+
+          <div class="canvas-wrap" id="canvasWrap">
+            <div class="phone-frame">
+              <article
+                id="editor"
+                class="wechat-editor"
+                contenteditable="true"
+                spellcheck="false"
+                aria-label="公众号正文编辑区"
+              ></article>
+              <textarea
+                id="sourceEditor"
+                class="source-editor"
+                aria-label="HTML 源代码编辑区"
+                spellcheck="false"
+              ></textarea>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel action-panel" aria-label="编辑操作">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">编辑操作</p>
+              <h2>常用工具</h2>
+            </div>
+            <span class="status-pill" id="statusText">已就绪</span>
+          </div>
+
+          <div class="action-stack">
+            <button class="button primary wide" id="copyBtn" type="button">复制正文</button>
+            <button class="button secondary wide" id="sourceModeBtn" type="button" aria-pressed="false">编辑源码</button>
+            <button class="button danger wide" id="clearBtn" type="button">清空正文</button>
+          </div>
+
+          <details class="tool-collapse">
+            <summary>链接地址</summary>
+            <div class="collapse-body">
+              <label class="field">
+                <span>链接地址</span>
+                <input id="linkInput" type="url" placeholder="https://example.com" />
+              </label>
+              <div class="two-buttons">
+                <button class="button ghost" id="insertLinkBtn" type="button">插入链接</button>
+                <button class="button ghost" id="unlinkBtn" type="button">删除链接</button>
+              </div>
+            </div>
+          </details>
+
+          <details class="tool-collapse">
+            <summary>插入图片</summary>
+            <div class="collapse-body">
+              <label class="field">
+                <span>图片 URL</span>
+                <input id="imageUrlInput" type="url" placeholder="https://example.com/image.png" />
+              </label>
+              <label class="field">
+                <span>图片说明</span>
+                <input id="imageAltInput" type="text" maxlength="80" />
+              </label>
+              <label class="field">
+                <span>图片宽度</span>
+                <input id="imageWidthInput" type="text" value="100%" />
+              </label>
+              <label class="check-row panel-check">
+                <input id="imageCenterToggle" type="checkbox" checked />
+                <span>居中显示</span>
+              </label>
+              <input id="imageFileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+              <div class="two-buttons">
+                <button class="button ghost" id="insertImageUrlBtn" type="button">插入图片</button>
+                <button class="button ghost" id="chooseImageBtn" type="button">选择本地图片</button>
+              </div>
+              <button class="button ghost wide" id="deleteImageBtn" type="button">删除选中图片</button>
+            </div>
+          </details>
+
+          <details class="tool-collapse" open>
+            <summary>文章统计</summary>
+            <div class="collapse-body">
+              <section class="statistics-panel" aria-label="文章统计">
+                <dl id="articleStats"></dl>
+              </section>
+            </div>
+          </details>
+
+          <details class="tool-collapse">
+            <summary>导入导出</summary>
+            <div class="collapse-body">
+              <div class="action-grid">
+                <button class="button ghost small" id="exportHtmlBtn" type="button">导出 HTML</button>
+                <button class="button ghost small" id="exportTextBtn" type="button">导出纯文本</button>
+                <button class="button ghost small" id="exportDraftsBtn" type="button">导出草稿</button>
+                <button class="button ghost small" id="exportTemplatesBtn" type="button">导出模板</button>
+                <button class="button ghost small" id="exportBackupBtn" type="button">完整备份</button>
+                <button class="button ghost small" id="importBackupBtn" type="button">导入备份</button>
+              </div>
+              <input id="backupFileInput" type="file" accept="application/json,.json" hidden />
+            </div>
+          </details>
+
+          <div class="home-link-area">
+            <a class="button ghost wide home-link" id="homeLink" href="/" aria-label="返回主站">
+              <span class="home-link-icon" aria-hidden="true">←</span>
+              <span>返回主站</span>
+            </a>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="modal-backdrop" id="draftModal" hidden>
+      <section class="draft-modal" role="dialog" aria-modal="true" aria-labelledby="draftModalTitle">
+        <div class="draft-modal-head">
+          <div>
+            <p class="section-kicker">草稿管理</p>
+            <h2 id="draftModalTitle">已保存的草稿</h2>
+          </div>
+          <button class="modal-close" id="draftModalCloseBtn" type="button" aria-label="关闭草稿列表">×</button>
+        </div>
+        <div class="draft-list" id="draftList"></div>
+        <p class="draft-empty" id="draftEmpty" hidden>还没有保存过草稿。</p>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="recoverModal" hidden>
+      <section class="draft-modal" role="dialog" aria-modal="true" aria-labelledby="recoverTitle">
+        <div class="draft-modal-head">
+          <div>
+            <p class="section-kicker">自动恢复</p>
+            <h2 id="recoverTitle">检测到未保存内容</h2>
+          </div>
+          <button class="modal-close" id="recoverCloseBtn" type="button" aria-label="关闭恢复提示">×</button>
+        </div>
+        <div class="modal-content">
+          <div class="recover-preview" id="recoverPreview" hidden></div>
+          <div class="three-buttons">
+            <button class="button secondary" id="recoverApplyBtn" type="button">恢复</button>
+            <button class="button ghost" id="recoverPreviewBtn" type="button">预览</button>
+            <button class="button danger" id="recoverIgnoreBtn" type="button">忽略</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="copyReportModal" hidden>
+      <section class="draft-modal" role="dialog" aria-modal="true" aria-labelledby="copyReportTitle">
+        <div class="draft-modal-head">
+          <div>
+            <p class="section-kicker">复制检查</p>
+            <h2 id="copyReportTitle">正文兼容报告</h2>
+          </div>
+          <button class="modal-close" id="copyReportCloseBtn" type="button" aria-label="关闭复制报告">×</button>
+        </div>
+        <div class="modal-content">
+          <dl class="copy-report" id="copyReportStats"></dl>
+          <ul class="issue-list" id="copyIssueList"></ul>
+          <div class="three-buttons">
+            <button class="button secondary" id="copyFixBtn" type="button">自动修复并复制</button>
+            <button class="button ghost" id="copyAnywayBtn" type="button">仍然复制</button>
+            <button class="button danger" id="copyCancelBtn" type="button">返回修改</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="authModal" hidden>
+      <section class="draft-modal account-modal" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
+        <div class="draft-modal-head">
+          <div>
+            <p class="section-kicker">账号</p>
+            <h2 id="authModalTitle">登录微信编辑器</h2>
+          </div>
+          <button class="modal-close" id="authModalCloseBtn" type="button" aria-label="关闭账号窗口">×</button>
+        </div>
+        <div class="modal-content account-modal-content">
+          <div class="segmented-control" id="authTabs" role="tablist">
+            <button type="button" data-auth-view="login" aria-selected="true">登录</button>
+            <button type="button" data-auth-view="register" aria-selected="false">注册</button>
+          </div>
+          <p class="form-feedback" id="authFeedback" role="status" hidden></p>
+
+          <form class="account-form" id="loginForm" data-auth-panel="login">
+            <label class="field"><span>邮箱</span><input id="loginEmail" name="email" type="email" autocomplete="email" maxlength="254" required /></label>
+            <label class="field"><span>密码</span><input id="loginPassword" name="password" type="password" autocomplete="current-password" maxlength="128" required /></label>
+            <label class="check-row panel-check"><input id="loginRemember" name="remember" type="checkbox" /><span>保持登录</span></label>
+            <button class="button primary wide" type="submit">登录</button>
+            <button class="text-button" id="openForgotBtn" type="button">忘记密码</button>
+          </form>
+
+          <form class="account-form" id="registerForm" data-auth-panel="register" hidden>
+            <label class="field"><span>邮箱</span><input name="email" type="email" autocomplete="email" maxlength="254" required /></label>
+            <label class="field"><span>密码</span><input name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required /></label>
+            <label class="field"><span>确认密码</span><input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required /></label>
+            <label class="check-row panel-check"><input name="termsAccepted" type="checkbox" required /><span>我同意用户协议和隐私政策</span></label>
+            <button class="button primary wide" type="submit">创建账号</button>
+          </form>
+
+          <form class="account-form" id="forgotPasswordForm" data-auth-panel="forgot" hidden>
+            <p class="form-intro">输入注册邮箱，我们会发送一次性密码重置链接。</p>
+            <label class="field"><span>邮箱</span><input name="email" type="email" autocomplete="email" maxlength="254" required /></label>
+            <button class="button primary wide" type="submit">发送重置邮件</button>
+            <button class="text-button" type="button" data-auth-view="login">返回登录</button>
+          </form>
+
+          <form class="account-form" id="resetPasswordForm" data-auth-panel="reset" hidden>
+            <input name="token" type="hidden" />
+            <label class="field"><span>新密码</span><input name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required /></label>
+            <label class="field"><span>确认新密码</span><input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required /></label>
+            <button class="button primary wide" type="submit">设置新密码</button>
+          </form>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="membershipModal" hidden>
+      <section class="draft-modal membership-modal" role="dialog" aria-modal="true" aria-labelledby="membershipModalTitle">
+        <div class="draft-modal-head">
+          <div>
+            <p class="section-kicker">我的账号</p>
+            <h2 id="membershipModalTitle">会员中心</h2>
+          </div>
+          <button class="modal-close" id="membershipModalCloseBtn" type="button" aria-label="关闭会员中心">×</button>
+        </div>
+        <div class="modal-content membership-content">
+          <div class="segmented-control" id="membershipTabs" role="tablist">
+            <button type="button" data-membership-view="overview" aria-selected="true">会员信息</button>
+            <button type="button" data-membership-view="security" aria-selected="false">账号安全</button>
+          </div>
+          <section data-membership-panel="overview">
+            <div class="membership-summary" id="membershipSummary"></div>
+            <h3 class="content-heading">套餐能力</h3>
+            <div class="capability-list" id="capabilityList"></div>
+          </section>
+          <section data-membership-panel="security" hidden>
+            <form class="account-form compact-form" id="changePasswordForm">
+              <h3 class="content-heading">修改密码</h3>
+              <label class="field"><span>当前密码</span><input name="currentPassword" type="password" autocomplete="current-password" required /></label>
+              <label class="field"><span>新密码</span><input name="newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required /></label>
+              <label class="field"><span>确认新密码</span><input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required /></label>
+              <button class="button secondary wide" type="submit">修改密码</button>
+            </form>
+            <div class="security-section">
+              <div class="section-row"><h3 class="content-heading">登录设备</h3><button class="button ghost small" id="refreshSessionsBtn" type="button">刷新</button></div>
+              <div class="session-list" id="sessionList"></div>
+            </div>
+            <button class="button danger wide account-logout" id="logoutBtn" type="button">退出当前账号</button>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="wechatAccountModal" hidden>
+      <section class="draft-modal wechat-account-modal" role="dialog" aria-modal="true" aria-labelledby="wechatAccountModalTitle">
+        <header class="draft-modal-head">
+          <div><p class="section-kicker">微信公众平台</p><h2 id="wechatAccountModalTitle">公众号管理</h2></div>
+          <button class="modal-close" id="wechatAccountModalCloseBtn" type="button" aria-label="关闭公众号管理">×</button>
+        </header>
+        <div class="modal-content wechat-account-content">
+          <p class="form-feedback" id="wechatAccountFeedback" role="status" hidden></p>
+          <form class="wechat-account-form" id="wechatAccountForm">
+            <input name="accountId" type="hidden" />
+            <div class="wechat-account-form-grid">
+              <label class="field"><span>公众号名称</span><input name="displayName" maxlength="80" required /></label>
+              <label class="field"><span>AppID</span><input name="appId" autocomplete="off" placeholder="wx 开头" required /></label>
+              <label class="field"><span>AppSecret</span><input name="appSecret" type="password" autocomplete="new-password" required /></label>
+              <label class="check-row"><input name="isDefault" type="checkbox" /><span>设为默认公众号</span></label>
+            </div>
+            <div class="wechat-account-form-actions">
+              <button class="button primary" type="submit">验证并绑定</button>
+              <button class="button ghost" id="cancelWechatAccountEditBtn" type="button" hidden>取消修改</button>
+            </div>
+          </form>
+          <div class="wechat-account-list" id="wechatAccountList"></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="wechatDraftModal" hidden>
+      <section class="draft-modal wechat-draft-modal" role="dialog" aria-modal="true" aria-labelledby="wechatDraftModalTitle">
+        <header class="draft-modal-head">
+          <div><p class="section-kicker">微信草稿箱</p><h2 id="wechatDraftModalTitle">保存文章到公众号</h2></div>
+          <button class="modal-close" id="wechatDraftModalCloseBtn" type="button" aria-label="关闭保存窗口">×</button>
+        </header>
+        <form class="modal-content wechat-draft-content" id="wechatDraftForm">
+          <p class="form-feedback" id="wechatDraftFeedback" role="status" hidden></p>
+          <section>
+            <h3 class="content-heading">选择公众号</h3>
+            <div class="wechat-draft-accounts" id="wechatDraftAccountList"></div>
+          </section>
+          <div class="wechat-draft-fields">
+            <label class="field"><span>标题</span><input name="title" maxlength="32" required /></label>
+            <label class="field"><span>作者</span><input name="author" maxlength="16" /></label>
+            <label class="field field-wide"><span>摘要</span><textarea name="digest" maxlength="128" rows="2"></textarea></label>
+            <label class="field field-wide"><span>原文链接</span><input name="contentSourceUrl" type="url" maxlength="1024" placeholder="可选，https://..." /></label>
+            <label class="field"><span>微信封面素材 ID</span><input name="coverMediaId" maxlength="256" placeholder="已有素材时填写" /></label>
+            <label class="field"><span>封面图片 URL</span><input name="coverImage" placeholder="也可自动使用正文首图" /></label>
+            <label class="field field-wide"><span>上传封面</span><input name="coverFile" type="file" accept="image/png,image/jpeg,image/gif" /></label>
+          </div>
+          <div class="wechat-draft-options">
+            <label class="check-row"><input name="needOpenComment" type="checkbox" /><span>允许评论</span></label>
+            <label class="check-row"><input name="onlyFansCanComment" type="checkbox" /><span>仅粉丝可评论</span></label>
+          </div>
+          <section class="wechat-draft-preview" id="wechatDraftPreview" hidden>
+            <div class="section-row"><h3 class="content-heading">发布前检查</h3><span class="status-pill" id="wechatDraftCheckStatus">待检查</span></div>
+            <div class="wechat-draft-preview-body" id="wechatDraftPreviewBody"></div>
+          </section>
+          <div class="wechat-draft-actions">
+            <button class="button ghost" id="previewWechatDraftBtn" type="button">检查并预览</button>
+            <button class="button primary" id="submitWechatDraftBtn" type="submit">确认保存到草稿箱</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="adminModal" hidden>
+      <section class="draft-modal admin-modal" role="dialog" aria-modal="true" aria-labelledby="adminModalTitle">
+        <div class="draft-modal-head">
+          <div>
+            <p class="section-kicker">管理员</p>
+            <h2 id="adminModalTitle">会员管理</h2>
+          </div>
+          <button class="modal-close" id="adminModalCloseBtn" type="button" aria-label="关闭会员管理">×</button>
+        </div>
+        <div class="modal-content admin-content">
+          <div class="segmented-control admin-tabs" id="adminTabs" role="tablist">
+            <button type="button" data-admin-view="users" aria-selected="true">用户与会员</button>
+            <button type="button" data-admin-view="catalog" aria-selected="false">套餐与功能</button>
+            <button type="button" data-admin-view="audit" aria-selected="false">审计日志</button>
+          </div>
+          <p class="form-feedback" id="adminFeedback" role="status" hidden></p>
+
+          <section data-admin-panel="users">
+            <label class="field admin-select"><span>选择用户</span><select id="adminUserSelect"></select></label>
+            <div class="admin-grid">
+              <form class="admin-form" id="adminUserForm">
+                <h3>账号状态</h3>
+                <label class="field"><span>状态</span><select name="status"><option value="active">正常</option><option value="frozen">冻结</option><option value="disabled">禁用</option></select></label>
+                <label class="field"><span>角色</span><select name="role"><option value="user">普通用户</option><option value="admin">管理员</option></select></label>
+                <label class="check-row panel-check"><input name="emailVerified" type="checkbox" /><span>邮箱已验证</span></label>
+                <button class="button secondary wide" type="submit">保存账号状态</button>
+              </form>
+              <form class="admin-form" id="adminMembershipForm">
+                <h3>会员开通与延期</h3>
+                <input name="membershipId" type="hidden" />
+                <label class="field"><span>套餐</span><select name="planId"></select></label>
+                <label class="field"><span>会员状态</span><select name="status"><option value="trialing">试用</option><option value="active">有效</option><option value="granted">管理员赠送</option><option value="paused">暂停</option><option value="canceled">取消</option><option value="expired">过期</option><option value="lifetime">永久</option></select></label>
+                <label class="field"><span>开始时间</span><input name="startsAt" type="datetime-local" /></label>
+                <label class="field"><span>到期时间</span><input name="endsAt" type="datetime-local" /></label>
+                <button class="button primary wide" type="submit">保存会员记录</button>
+              </form>
+              <form class="admin-form" id="adminEntitlementForm">
+                <h3>单用户特殊授权</h3>
+                <label class="field"><span>功能</span><select name="featureKey"></select></label>
+                <label class="field"><span>授权结果</span><select name="allowed"><option value="true">允许</option><option value="false">禁止</option></select></label>
+                <label class="field"><span>配额</span><input name="quotaLimit" type="number" min="0" max="1000000" placeholder="留空表示不限" /></label>
+                <label class="field"><span>周期</span><select name="quotaPeriod"><option value="monthly">每月</option><option value="daily">每天</option><option value="lifetime">总量</option></select></label>
+                <button class="button secondary wide" type="submit">添加特殊授权</button>
+              </form>
+            </div>
+            <div class="admin-record-list" id="adminEntitlementList"></div>
+          </section>
+
+          <section data-admin-panel="catalog" hidden>
+            <div class="admin-grid two-column-admin">
+              <form class="admin-form" id="adminPlanForm">
+                <h3>套餐定义</h3>
+                <label class="field"><span>选择套餐</span><select name="id"><option value="">新建套餐</option></select></label>
+                <label class="field"><span>标识</span><input name="slug" maxlength="50" required /></label>
+                <label class="field"><span>名称</span><input name="name" maxlength="80" required /></label>
+                <label class="field"><span>说明</span><textarea name="description" maxlength="300"></textarea></label>
+                <label class="field"><span>等级</span><input name="rank" type="number" min="0" max="10000" value="100" /></label>
+                <label class="check-row panel-check"><input name="active" type="checkbox" checked /><span>启用套餐</span></label>
+                <button class="button secondary wide" type="submit">保存套餐</button>
+              </form>
+              <form class="admin-form" id="adminFeatureForm">
+                <h3>功能定义</h3>
+                <label class="field"><span>选择功能</span><select name="id"><option value="">新建功能</option></select></label>
+                <label class="field"><span>功能标识</span><input name="key" maxlength="100" required /></label>
+                <label class="field"><span>名称</span><input name="name" maxlength="100" required /></label>
+                <label class="field"><span>说明</span><textarea name="description" maxlength="300"></textarea></label>
+                <label class="field"><span>默认权限</span><select name="defaultAccess"><option value="public">所有人</option><option value="authenticated">登录用户</option><option value="verified">已验证用户</option><option value="plan" selected>套餐授权</option></select></label>
+                <label class="check-row panel-check"><input name="active" type="checkbox" checked /><span>启用功能</span></label>
+                <button class="button secondary wide" type="submit">保存功能</button>
+              </form>
+            </div>
+            <form class="admin-form plan-feature-form" id="adminPlanFeatureForm">
+              <h3>套餐功能配置</h3>
+              <div class="admin-inline-fields">
+                <label class="field"><span>套餐</span><select name="planId"></select></label>
+                <label class="field"><span>功能</span><select name="featureKey"></select></label>
+                <label class="check-row panel-check"><input name="enabled" type="checkbox" checked /><span>允许使用</span></label>
+                <label class="field"><span>配额</span><input name="quotaLimit" type="number" min="0" max="1000000" placeholder="不限" /></label>
+                <label class="field"><span>周期</span><select name="quotaPeriod"><option value="monthly">每月</option><option value="daily">每天</option><option value="lifetime">总量</option></select></label>
+              </div>
+              <button class="button primary wide" type="submit">保存套餐功能</button>
+            </form>
+          </section>
+
+          <section data-admin-panel="audit" hidden>
+            <div class="section-row"><h3 class="content-heading">最近操作</h3><button class="button ghost small" id="refreshAuditBtn" type="button">刷新</button></div>
+            <div class="audit-list" id="auditList"></div>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="./js/app.js?v=2.1.3-src-placeholder-fix"></script>
+  </body>
+</html>
