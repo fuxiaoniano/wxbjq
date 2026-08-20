@@ -1,0 +1,24 @@
+{
+  "name": "wechat-editor-local",
+  "version": "2.0.0",
+  "private": true,
+  "description": "本地优先的微信公众号富文本编辑器",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node tests/check-syntax.js",
+    "lint": "node tests/check-syntax.js",
+    "typecheck": "node tests/check-syntax.js",
+    "test": "node --test",
+    "test:auth": "node --test tests/auth.test.js",
+    "build": "node tests/check-syntax.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "nodemailer": "^9.0.3",
+    "parse5": "7.3.0"
+  }
+}
