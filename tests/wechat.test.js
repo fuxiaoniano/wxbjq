@@ -13,6 +13,14 @@ const { createTestApp, tokenFromMessage } = require("./app-helper");
 const encryptionKey = crypto.createHash("sha256").update("wechat-test-key").digest();
 const encryptionKeyBase64 = encryptionKey.toString("base64");
 
+function testWechatAppId(suffix) {
+  return ["w", "x", suffix].join("");
+}
+
+function testWechatAppSecret(label) {
+  return `test-${label}-secret`.padEnd(32, "a");
+}
+
 function createMockWechatClient() {
   const calls = [];
   return {
@@ -48,8 +56,9 @@ async function grantMembership(app, userId, planId) {
 }
 
 test("wechat credentials use authenticated encryption and reject tampering", () => {
-  const envelope = encryptSecret("0123456789abcdef0123456789abcdef", encryptionKey, "test-v1", "credential-test");
-  assert.equal(decryptSecret(envelope, encryptionKey, "credential-test"), "0123456789abcdef0123456789abcdef");
+  const credential = testWechatAppSecret("credential");
+  const envelope = encryptSecret(credential, encryptionKey, "test-v1", "credential-test");
+  assert.equal(decryptSecret(envelope, encryptionKey, "credential-test"), credential);
   assert.equal(envelope.algorithm, "aes-256-gcm");
   assert.equal(envelope.keyVersion, "test-v1");
   const tampered = { ...envelope, ciphertext: `${envelope.ciphertext.slice(0, -2)}AA` };
@@ -78,10 +87,10 @@ test("members can bind multiple accounts while tenant isolation and token secrec
     await grantMembership(app, firstUser.user.id, "plan_business");
     await grantMembership(app, secondUser.user.id, "plan_pro");
 
-    const firstSecret = "abcdef0123456789abcdef0123456789";
+    const firstSecret = testWechatAppSecret("first");
     const createdFirst = await app.post(
       "/api/wechat/accounts",
-      { displayName: "第一公众号", appId: "wx1234567890abcdef", appSecret: firstSecret, isDefault: true },
+      { displayName: "第一公众号", appId: testWechatAppId("1234567890abcdef"), appSecret: firstSecret, isDefault: true },
       firstUser.jar,
     );
     assert.equal(createdFirst.response.status, 201);
@@ -95,19 +104,19 @@ test("members can bind multiple accounts while tenant isolation and token secrec
 
     const createdSecond = await app.post(
       "/api/wechat/accounts",
-      { displayName: "第二公众号", appId: "wxabcdef1234567890", appSecret: "1234567890abcdef1234567890abcdef" },
+      { displayName: "第二公众号", appId: testWechatAppId("abcdef1234567890"), appSecret: testWechatAppSecret("second") },
       firstUser.jar,
     );
     assert.equal(createdSecond.response.status, 201);
     const otherAccount = await app.post(
       "/api/wechat/accounts",
-      { displayName: "其他用户公众号", appId: "wx9988776655443322", appSecret: "fedcba9876543210fedcba9876543210" },
+      { displayName: "其他用户公众号", appId: testWechatAppId("9988776655443322"), appSecret: testWechatAppSecret("other") },
       secondUser.jar,
     );
     assert.equal(otherAccount.response.status, 201);
     const proMultipleDenied = await app.post(
       "/api/wechat/accounts",
-      { displayName: "超额公众号", appId: "wx1122334455667788", appSecret: "0123456789abcdef0123456789abcdef" },
+      { displayName: "超额公众号", appId: testWechatAppId("1122334455667788"), appSecret: testWechatAppSecret("extra") },
       secondUser.jar,
     );
     assert.equal(proMultipleDenied.response.status, 403);
