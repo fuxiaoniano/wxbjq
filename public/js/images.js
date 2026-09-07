@@ -1,4 +1,4 @@
-import { isSafeImageSrc, sanitizeEditorHtml } from "./sanitizer.js?v=2.1.3-src-placeholder-fix";
+import { isSafeImageSrc, sanitizeEditorHtml } from "./sanitizer.js?v=2.2.0";
 import { escapeHtml, readFileAsDataUrl, showToast } from "./utils.js";
 
 function buildImageHtml({ src, alt = "", width = "100%", center = true }) {

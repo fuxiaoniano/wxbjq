@@ -80,6 +80,8 @@ test("administrator tools use a standalone page and WeChat credentials stay out 
   assert.match(index, /id="adminEntryBtn"[^>]*>管理后台</);
   assert.match(admin, /id="adminWorkspace"/);
   assert.match(membership, /window\.open\(withBasePath\("\/admin\.html"\)/);
+  assert.doesNotMatch(index, /id="adminModal"/);
+  assert.doesNotMatch(membership, /\/admin\/users|adminPlanFeatureForm|loadAdminData/);
   assert.ok(!admin.includes("encryptedAppSecret"));
   assert.ok(!wechat.includes("accessToken"));
 });
@@ -122,6 +124,46 @@ test("empty image src attributes remain available to the editor", async () => {
   assert.equal(isSafeImageSrc("https://mmbiz.qpic.cn/example/image/1"), true);
   assert.equal(isSafeImageSrc("javascript:alert(1)"), false);
   assert.equal(isSafeImageSrc("//evil.example/image.png"), false);
+});
+
+test("browser CSS sanitization rejects escaped URLs", async () => {
+  installMinimalBrowserGlobals();
+  const fixture = createFrontendFixture();
+  const { sanitizeStyle } = await fixture.importModule("sanitizer.js");
+
+  assert.equal(
+    sanitizeStyle("background:u\\72l(javascript:alert(1));color:#123456"),
+    "color: #123456",
+  );
+});
+
+test("theme replacement keeps semantic color shades distinct", async () => {
+  installMinimalBrowserGlobals();
+  const fixture = createFrontendFixture();
+  const { replaceThemeColors } = await fixture.importModule("templates.js");
+  const html = '<p style="color:#d92d20;background:#fbeae9">text</p>';
+
+  assert.equal(
+    replaceThemeColors(html, ["#d92d20"], "#2563eb"),
+    '<p style="color:#2563eb;background:#e9effd">text</p>',
+  );
+});
+
+test("WeChat idempotency keys work in browsers without randomUUID", async () => {
+  installMinimalBrowserGlobals();
+  const fixture = createFrontendFixture();
+  const { createIdempotencyKey } = await fixture.importModule("wechat-drafts.js");
+
+  assert.equal(createIdempotencyKey({ randomUUID: () => "uuid-key" }), "uuid-key");
+  assert.equal(
+    createIdempotencyKey({
+      getRandomValues(bytes) {
+        bytes.fill(0xab);
+        return bytes;
+      },
+    }),
+    `draft-${"ab".repeat(16)}`,
+  );
 });
 
 test("copy conversion adds paragraph spacing when the editor relied on CSS", async () => {

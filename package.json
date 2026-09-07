@@ -1,6 +1,6 @@
 {
   "name": "wechat-editor-local",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "private": true,
   "description": "本地优先的微信公众号富文本编辑器",
   "type": "commonjs",

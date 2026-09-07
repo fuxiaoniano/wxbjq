@@ -1,4 +1,4 @@
-import { isSafeHref } from "./sanitizer.js?v=2.1.3-src-placeholder-fix";
+import { isSafeHref } from "./sanitizer.js?v=2.2.0";
 import {
   getSavedTextSelection,
   restoreEditorSelection,

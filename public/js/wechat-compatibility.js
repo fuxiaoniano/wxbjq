@@ -1,4 +1,4 @@
-import { isSafeHref, sanitizeEditorHtml, sanitizeStyle } from "./sanitizer.js?v=2.1.3-src-placeholder-fix";
+import { isSafeHref, sanitizeEditorHtml, sanitizeStyle } from "./sanitizer.js?v=2.2.0";
 import { getTextBytes } from "./utils.js";
 
 const ALLOWED_TAGS = new Set([

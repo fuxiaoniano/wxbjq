@@ -38,6 +38,12 @@ function dateValue(value, name, allowNull = true) {
   return date.toISOString();
 }
 
+function validateDateRange(startsAt, endsAt) {
+  if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
+    invalid("结束时间必须晚于开始时间");
+  }
+}
+
 function quota(value, period) {
   if (value === null || value === "" || value === undefined) {
     return { quotaLimit: null, quotaPeriod: null };
@@ -121,7 +127,7 @@ function parseMembership(body, partial = false) {
   }
   if (!partial || value.startsAt !== undefined) result.startsAt = dateValue(value.startsAt || new Date(), "开始时间", false);
   if (value.endsAt !== undefined) result.endsAt = dateValue(value.endsAt, "结束时间");
-  if (result.endsAt && result.startsAt && new Date(result.endsAt) <= new Date(result.startsAt)) invalid("结束时间必须晚于开始时间");
+  validateDateRange(result.startsAt, result.endsAt);
   return result;
 }
 
@@ -136,6 +142,7 @@ function parseEntitlement(body, partial = false) {
   if (value.quotaLimit !== undefined || value.quotaPeriod !== undefined) {
     Object.assign(result, quota(value.quotaLimit, value.quotaPeriod));
   }
+  validateDateRange(result.startsAt, result.endsAt);
   return result;
 }
 
@@ -147,4 +154,5 @@ module.exports = {
   parsePlan,
   parsePlanFeature,
   parseUserUpdate,
+  validateDateRange,
 };

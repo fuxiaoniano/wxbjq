@@ -1,4 +1,4 @@
-import { sanitizeEditorHtml } from "./sanitizer.js?v=2.1.3-src-placeholder-fix";
+import { sanitizeEditorHtml } from "./sanitizer.js?v=2.2.0";
 import { formatBytes, getTextBytes } from "./utils.js";
 
 export function analyzeArticle(html) {

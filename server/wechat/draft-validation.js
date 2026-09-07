@@ -29,7 +29,7 @@ function parseDraftInput(body, config) {
     try { source = new URL(contentSourceUrl); } catch (error) {
       throw createHttpError(422, "INVALID_SOURCE_URL", "原文链接格式不正确");
     }
-    if (!["http:", "https:"].includes(source.protocol)) {
+    if (!["http:", "https:"].includes(source.protocol) || source.username || source.password) {
       throw createHttpError(422, "INVALID_SOURCE_URL", "原文链接仅支持 HTTP 或 HTTPS");
     }
   }

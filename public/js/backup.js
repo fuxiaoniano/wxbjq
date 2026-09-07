@@ -1,6 +1,6 @@
 import { apiJson } from "./api.js";
 import { canUseServerStorage } from "./config.js";
-import { sanitizeEditorHtml } from "./sanitizer.js?v=2.1.3-src-placeholder-fix";
+import { sanitizeEditorHtml } from "./sanitizer.js?v=2.2.0";
 import { downloadText, readFileAsText, safeJsonStringify, showToast } from "./utils.js";
 
 function stamp() {

@@ -1,7 +1,7 @@
 import { apiJson } from "./api.js";
 import { canUseServerStorage } from "./config.js";
 import { builtInTemplateCategoryOrder, builtInTemplates } from "./built-in-templates.js";
-import { sanitizeEditorHtml } from "./sanitizer.js?v=2.1.3-src-placeholder-fix";
+import { sanitizeEditorHtml } from "./sanitizer.js?v=2.2.0";
 import { bindHexColorInput, colorInputValue, normalizeHexColor } from "./colors.js";
 import { debounce, createId, escapeHtml, readLocalJson, showToast, writeLocalJson } from "./utils.js";
 
@@ -29,6 +29,10 @@ const THEMES = {
   "business-blue": "#2563eb",
   "black-gold": "#b8872b",
 };
+
+function shouldFallbackFromTemplateRequest(error) {
+  return error?.code === "SERVER_STORAGE_DISABLED" || error?.status === 404 || (!error?.status && error instanceof TypeError);
+}
 
 function hexToRgb(hex) {
   const match = String(hex || "").match(/^#?([0-9a-f]{6})([0-9a-f]{2})?$/i);
@@ -68,6 +72,20 @@ function colorTokens(color) {
     primaryLight: mixColor(primaryColor, "#ffffff", 0.35),
     primaryDark: mixColor(primaryColor, "#000000", 0.32),
   };
+}
+
+export function replaceThemeColors(html, sourceColors, targetColor) {
+  const target = colorTokens(targetColor);
+  const replacements = new Map();
+  for (const sourceColor of sourceColors) {
+    const source = colorTokens(sourceColor);
+    for (const key of Object.keys(target)) {
+      replacements.set(source[key].toLowerCase(), target[key]);
+    }
+  }
+  return String(html || "").replace(/#[0-9a-f]{8}|#[0-9a-f]{6}/gi, (color) =>
+    replacements.get(color.toLowerCase()) || color,
+  );
 }
 
 function renderTemplateHtml(template, color) {
@@ -161,6 +179,7 @@ export function createTemplateManager(elements, editorController) {
   let category = "all";
   let customOnly = false;
   let theme = loadTheme();
+  const usedThemeColors = new Set([theme.color]);
   const previewCache = new Map();
   let observer = null;
   let renderTask = null;
@@ -326,6 +345,7 @@ export function createTemplateManager(elements, editorController) {
       serverTemplates = (await apiJson("/system-templates")).map((template) => normalizeTemplate({ ...template, custom: true })).filter(Boolean);
       invalidateTemplateCache();
     } catch (error) {
+      if (!shouldFallbackFromTemplateRequest(error)) throw error;
       serverAvailable = false;
       serverTemplates = [];
       invalidateTemplateCache();
@@ -425,16 +445,15 @@ export function createTemplateManager(elements, editorController) {
     }
     const mode = elements.templateInsertMode.value || "after";
     editorController.insertHtmlAtSelection(getRenderedTemplate(template), mode, { scrollToInserted: true });
+    usedThemeColors.add(theme.color);
     showToast(`模板已插入：${template.name}`);
   }
 
   function updateArticleTheme() {
-    const colors = Object.values(THEMES).flatMap((color) => Object.values(colorTokens(color)));
-    let html = editorController.getHtml();
-    for (const oldColor of colors) {
-      html = html.split(oldColor).join(theme.color);
-    }
-    editorController.setHtml(html);
+    const sourceColors = new Set([...Object.values(THEMES), ...usedThemeColors]);
+    editorController.setHtml(replaceThemeColors(editorController.getHtml(), sourceColors, theme.color));
+    usedThemeColors.clear();
+    usedThemeColors.add(theme.color);
     showToast("正文主题色已更新");
   }
 

@@ -1,4 +1,4 @@
-import { sanitizeEditorHtml, isHtmlEmpty } from "./sanitizer.js?v=2.1.3-src-placeholder-fix";
+import { sanitizeEditorHtml, isHtmlEmpty } from "./sanitizer.js?v=2.2.0";
 import { restoreEditorSelection, saveEditorSelection } from "./selection.js";
 import { showToast } from "./utils.js";
 

@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const dotenv = require("dotenv");
 
-const VERSION = "2.0.0";
+const VERSION = "2.2.0";
 
 function parseBoolean(value, fallback) {
   if (value === undefined || value === null || value === "") return fallback;
@@ -38,7 +38,7 @@ function normalizeBasePath(value = "/") {
 }
 
 function isLoopbackHost(host) {
-  const normalized = String(host || "").trim().toLowerCase();
+  const normalized = String(host || "").trim().toLowerCase().replace(/^\[|\]$/g, "");
   return normalized === "127.0.0.1" || normalized === "::1" || normalized === "localhost";
 }
 
@@ -56,9 +56,13 @@ function splitList(value, fallback = "") {
 function splitOrigins(value, fallback) {
   return splitList(value, fallback).map((origin) => {
     try {
-      return new URL(origin).origin;
+      const parsed = new URL(origin);
+      if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) {
+        throw new Error("unsupported origin");
+      }
+      return parsed.origin;
     } catch (error) {
-      return origin;
+      throw new Error(`TRUSTED_ORIGINS 包含无效来源：${origin}`);
     }
   });
 }
@@ -95,11 +99,16 @@ function normalizeAppPublicUrl(value, host, port, basePath) {
   if (!["http:", "https:"].includes(parsed.protocol)) {
     throw new Error("APP_PUBLIC_URL 只允许使用 HTTP 或 HTTPS");
   }
-  parsed.username = "";
-  parsed.password = "";
+  if (parsed.username || parsed.password) {
+    throw new Error("APP_PUBLIC_URL 不能包含用户名或密码");
+  }
   parsed.search = "";
   parsed.hash = "";
   parsed.pathname = `${parsed.pathname.replace(/\/+$/g, "") || ""}/`;
+  const expectedPath = `${basePath || ""}/`;
+  if (parsed.pathname !== expectedPath) {
+    throw new Error(`APP_PUBLIC_URL 路径必须与 APP_BASE_PATH 一致：${expectedPath}`);
+  }
   return parsed.toString();
 }
 
@@ -116,7 +125,10 @@ function loadConfig(options = {}) {
   const host = env.HOST || "127.0.0.1";
   const port = parseInteger(env.PORT, 8090, 0);
   const nodeEnv = env.NODE_ENV || "development";
-  const deploymentMode = env.DEPLOYMENT_MODE || "local";
+  const deploymentMode = String(env.DEPLOYMENT_MODE || "local").trim().toLowerCase();
+  if (!["local", "public-stateless"].includes(deploymentMode)) {
+    throw new Error("DEPLOYMENT_MODE 只支持 local 或 public-stateless");
+  }
   const basePath = normalizeBasePath(env.APP_BASE_PATH || "/");
   const publicDir = path.join(rootDir, "public");
   const dataDir = env.DATA_DIR ? path.resolve(env.DATA_DIR) : path.join(rootDir, "data");
@@ -129,6 +141,14 @@ function loadConfig(options = {}) {
       : parseBoolean(env.SERVER_STORAGE_ENABLED, true);
   const authEnabled = parseBoolean(env.AUTH_ENABLED, deploymentMode !== "public-stateless");
   const appPublicUrl = normalizeAppPublicUrl(env.APP_PUBLIC_URL, host, port, basePath);
+  const allowUnauthenticatedRemoteStorage = parseBoolean(
+    env.ALLOW_UNAUTHENTICATED_REMOTE_STORAGE,
+    false,
+  );
+  const publicHostIsLoopback = isLoopbackHost(new URL(appPublicUrl).hostname);
+  const editorStorageEnabled =
+    serverStorageEnabled &&
+    (nodeEnv !== "production" || publicHostIsLoopback || allowUnauthenticatedRemoteStorage);
   // The public application URL is an operator-controlled first-party origin. Keeping it in
   // the allowlist prevents a domain migration from rejecting the editor's own write requests.
   const trustedOrigins = [
@@ -167,13 +187,11 @@ function loadConfig(options = {}) {
     appPublicUrl,
     deploymentMode,
     serverStorageEnabled,
+    editorStorageEnabled,
     authEnabled,
     registrationEnabled: parseBoolean(env.REGISTRATION_ENABLED, true),
     allowUnverifiedLogin: parseBoolean(env.ALLOW_UNVERIFIED_LOGIN, true),
-    allowUnauthenticatedRemoteStorage: parseBoolean(
-      env.ALLOW_UNAUTHENTICATED_REMOTE_STORAGE,
-      false,
-    ),
+    allowUnauthenticatedRemoteStorage,
     trustedOrigins,
     trustProxyHeaders: parseBoolean(env.TRUST_PROXY_HEADERS, false),
     sessionSecret:
@@ -253,7 +271,7 @@ function loadConfig(options = {}) {
       draftRecords: path.join(wechatDir, "draft-records.json"),
       imageCache: path.join(wechatDir, "image-cache.json"),
     },
-    maxRequestBodyBytes: parseInteger(env.MAX_REQUEST_BODY_BYTES, 2 * 1024 * 1024, 1024),
+    maxRequestBodyBytes: parseInteger(env.MAX_REQUEST_BODY_BYTES, 4 * 1024 * 1024, 1024),
     maxDraftHtmlBytes: parseInteger(env.MAX_DRAFT_HTML_BYTES, 1024 * 1024, 1024),
     maxTemplateHtmlBytes: parseInteger(env.MAX_TEMPLATE_HTML_BYTES, 300 * 1024, 1024),
     maxDrafts: parseInteger(env.MAX_DRAFTS, 100, 1),
@@ -261,6 +279,10 @@ function loadConfig(options = {}) {
     maxBrowserDrafts: parseInteger(env.MAX_BROWSER_DRAFTS, 80, 1),
     requestReadTimeoutMs: parseInteger(env.REQUEST_READ_TIMEOUT_MS, 10_000, 1000),
   };
+
+  if (config.passwordMinLength > config.passwordMaxLength) {
+    throw new Error("PASSWORD_MIN_LENGTH 不能大于 PASSWORD_MAX_LENGTH");
+  }
 
   validateStartupSafety(config);
   return config;
@@ -272,7 +294,7 @@ function validateStartupSafety(config) {
   }
   if (
     !isLoopbackHost(config.host) &&
-    config.serverStorageEnabled &&
+    config.editorStorageEnabled &&
     !config.allowUnauthenticatedRemoteStorage
   ) {
     throw new Error(

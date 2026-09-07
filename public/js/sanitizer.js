@@ -87,6 +87,7 @@ const ALLOWED_CSS = new Set([
 ]);
 
 const ALLOWED_DISPLAY = new Set(["block", "inline", "inline-block", "none"]);
+const ALLOWED_REL = new Set(["nofollow", "noopener", "noreferrer", "sponsored", "ugc"]);
 
 function createReport() {
   return {
@@ -145,7 +146,7 @@ export function sanitizeStyle(style, report = createReport()) {
         report.removedCss += 1;
         return;
       }
-      if (!value || /url\s*\(|@import|expression\s*\(|behavior\s*:|!important/i.test(value)) {
+      if (!value || /[\\]|\/\*/.test(value) || /url\s*\(|@import|expression\s*\(|behavior\s*:|!important/i.test(value)) {
         report.removedCss += 1;
         return;
       }
@@ -237,7 +238,8 @@ function sanitizeElement(element, report, options) {
     if (name === "rel") {
       const rel = value
         .split(/\s+/)
-        .filter((token) => /^[a-z0-9_-]+$/i.test(token))
+        .map((token) => token.toLowerCase())
+        .filter((token) => ALLOWED_REL.has(token))
         .join(" ");
       if (rel) element.setAttribute("rel", rel);
       else element.removeAttribute(attribute.name);
@@ -254,6 +256,21 @@ function sanitizeElement(element, report, options) {
       if (value) element.setAttribute("data-width", value);
       else element.removeAttribute("data-width");
     }
+  }
+
+  if (tag === "a") {
+    const rel = new Set(
+      String(element.getAttribute("rel") || "")
+        .split(/\s+/)
+        .map((token) => token.toLowerCase())
+        .filter((token) => ALLOWED_REL.has(token)),
+    );
+    if (element.hasAttribute("href") || element.getAttribute("target") === "_blank") {
+      rel.add("noopener");
+      rel.add("noreferrer");
+    }
+    if (rel.size) element.setAttribute("rel", [...rel].join(" "));
+    else element.removeAttribute("rel");
   }
 
   if (options.forClipboard) {

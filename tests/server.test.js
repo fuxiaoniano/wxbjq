@@ -7,7 +7,7 @@ const path = require("node:path");
 const http = require("node:http");
 const test = require("node:test");
 const { createAppServer, loadConfig } = require("../server");
-const { ensureDataStore, readJsonFile } = require("../server/storage");
+const { ensureDataStore, readJsonFile, writeJsonAtomic } = require("../server/storage");
 const { sanitizeStoredHtml } = require("../server/sanitizer");
 const { inspectWechatCompatibility, normalizeWechatHtml } = require("../server/compatibility");
 
@@ -115,12 +115,71 @@ test("the configured public application origin is always trusted", () => {
       PORT: "8090",
       NODE_ENV: "test",
       APP_PUBLIC_URL: "https://fuxiaonian.net/wechat-editor/public/",
+      APP_BASE_PATH: "/wechat-editor/public",
       TRUSTED_ORIGINS: "http://127.0.0.1:8090",
     },
   });
 
   assert.ok(config.trustedOrigins.includes("https://fuxiaonian.net"));
   assert.ok(config.trustedOrigins.includes("http://127.0.0.1:8090"));
+});
+
+test("configuration validates deployment URLs, modes, and password bounds", () => {
+  const common = {
+    HOST: "127.0.0.1",
+    PORT: "8090",
+    NODE_ENV: "test",
+  };
+  assert.throws(
+    () => loadConfig({ rootDir, env: { ...common, DEPLOYMENT_MODE: "unknown" } }),
+    /DEPLOYMENT_MODE/,
+  );
+  assert.throws(
+    () => loadConfig({
+      rootDir,
+      env: {
+        ...common,
+        APP_PUBLIC_URL: "https://example.com/editor/",
+        APP_BASE_PATH: "/different",
+      },
+    }),
+    /APP_PUBLIC_URL/,
+  );
+  assert.throws(
+    () => loadConfig({
+      rootDir,
+      env: { ...common, APP_PUBLIC_URL: "https://user:pass@example.com/" },
+    }),
+    /用户名或密码/,
+  );
+  assert.throws(
+    () => loadConfig({
+      rootDir,
+      env: { ...common, PASSWORD_MIN_LENGTH: "64", PASSWORD_MAX_LENGTH: "32" },
+    }),
+    /PASSWORD_MIN_LENGTH/,
+  );
+});
+
+test("production public deployments keep shared editor storage disabled by default", () => {
+  const env = {
+    HOST: "127.0.0.1",
+    PORT: "8090",
+    NODE_ENV: "production",
+    AUTH_ENABLED: "false",
+    SERVER_STORAGE_ENABLED: "true",
+    APP_PUBLIC_URL: "https://fuxiaonian.net/wechat-editor/public/",
+    APP_BASE_PATH: "/wechat-editor/public",
+  };
+  const secured = loadConfig({ rootDir, env });
+  assert.equal(secured.serverStorageEnabled, true);
+  assert.equal(secured.editorStorageEnabled, false);
+
+  const explicitlyShared = loadConfig({
+    rootDir,
+    env: { ...env, ALLOW_UNAUTHENTICATED_REMOTE_STORAGE: "true" },
+  });
+  assert.equal(explicitlyShared.editorStorageEnabled, true);
 });
 
 test("proxied HTTP page requests redirect to the configured HTTPS URL", async () => {
@@ -150,6 +209,32 @@ test("proxied HTTP page requests redirect to the configured HTTPS URL", async ()
       },
     });
     assert.equal(secureResponse.status, 200);
+    assert.equal((await app.request("/api/health")).status, 404);
+  } finally {
+    await app.close();
+  }
+});
+
+test("public production mode keeps accounts available while editor drafts stay browser-local", async () => {
+  const app = await createTestServer({
+    NODE_ENV: "production",
+    AUTH_ENABLED: "false",
+    SERVER_STORAGE_ENABLED: "true",
+    APP_PUBLIC_URL: "https://fuxiaonian.net/wechat-editor/public/",
+    APP_BASE_PATH: "/wechat-editor/public",
+  });
+  try {
+    const health = await app.json("/wechat-editor/public/api/health");
+    assert.equal(health.response.status, 200);
+    assert.equal(health.payload.serverStorageEnabled, true);
+    assert.equal(health.payload.storage.drafts, false);
+    assert.equal(health.payload.storage.templates, false);
+
+    const index = await (await app.request("/wechat-editor/public/")).text();
+    assert.match(index, /name="server-storage-enabled" content="false"/);
+    const drafts = await app.json("/wechat-editor/public/api/drafts");
+    assert.equal(drafts.response.status, 403);
+    assert.equal(drafts.payload.error.code, "SERVER_STORAGE_DISABLED");
   } finally {
     await app.close();
   }
@@ -281,6 +366,12 @@ test("template CRUD sanitizes html and enforces limits", async () => {
     assert.equal(created.response.status, 201);
     assert.ok(!created.payload.html.includes("script"));
     assert.ok(!created.payload.html.includes("onclick"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const firstList = await app.json("/api/system-templates");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const secondList = await app.json("/api/system-templates");
+    assert.equal(firstList.payload[0].updatedAt, created.payload.updatedAt);
+    assert.equal(secondList.payload[0].updatedAt, created.payload.updatedAt);
 
     const limited = await app.json("/api/system-templates", {
       method: "POST",
@@ -304,6 +395,25 @@ test("template CRUD sanitizes html and enforces limits", async () => {
     assert.equal(updated.response.status, 200);
     assert.ok(!updated.payload.html.includes("flex"));
     assert.equal((await app.request(`/api/system-templates/${created.payload.id}`, { method: "DELETE", headers: writeHeaders(app.origin) })).status, 204);
+  } finally {
+    await app.close();
+  }
+});
+
+test("concurrent draft creation enforces the collection limit atomically", async () => {
+  const app = await createTestServer({ MAX_DRAFTS: "1" });
+  try {
+    const requests = ["concurrent-a", "concurrent-b"].map((id) =>
+      app.json("/api/drafts", {
+        method: "POST",
+        headers: writeHeaders(app.origin),
+        body: JSON.stringify({ id, title: id, html: `<p>${id}</p>` }),
+      }),
+    );
+    const results = await Promise.all(requests);
+    assert.deepEqual(results.map((item) => item.response.status).sort(), [201, 409]);
+    const list = await app.json("/api/drafts?page=1&pageSize=10");
+    assert.equal(list.payload.total, 1);
   } finally {
     await app.close();
   }
@@ -433,6 +543,33 @@ test("sanitizer tokenizes quoted attributes and blocked self-closing tags safely
     sanitizeStoredHtml("<svg><svg /></svg><p>after</p>"),
     "<p>after</p>",
   );
+  const rel = sanitizeStoredHtml('<a href="https://example.com" rel="opener nofollow">safe</a>');
+  assert.match(rel, /nofollow/);
+  assert.match(rel, /noopener/);
+  assert.match(rel, /noreferrer/);
+  assert.doesNotMatch(rel, /\bopener\b/);
+  assert.equal(
+    sanitizeStoredHtml('<p style="background:u\\72l(javascript:alert(1));color:#123456">safe</p>'),
+    '<p style="color: #123456">safe</p>',
+  );
+  assert.doesNotThrow(() => sanitizeStoredHtml('<a href="&#999999999999;">safe</a>'));
+});
+
+test("atomic JSON writes preserve a valid backup when the primary file is corrupt", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "wechat-editor-storage-recovery-"));
+  const filePath = path.join(tempDir, "records.json");
+  const backupPath = `${filePath}.bak`;
+  try {
+    fs.writeFileSync(filePath, "{broken", "utf8");
+    fs.writeFileSync(backupPath, JSON.stringify([{ id: "last-good" }]), "utf8");
+
+    assert.deepEqual(await readJsonFile(filePath, []), [{ id: "last-good" }]);
+    await writeJsonAtomic(filePath, [{ id: "new-primary" }]);
+    assert.deepEqual(JSON.parse(fs.readFileSync(filePath, "utf8")), [{ id: "new-primary" }]);
+    assert.deepEqual(JSON.parse(fs.readFileSync(backupPath, "utf8")), [{ id: "last-good" }]);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("wechat compatibility detects and normalizes unsupported html without losing text", () => {

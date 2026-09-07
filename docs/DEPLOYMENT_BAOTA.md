@@ -81,6 +81,8 @@ WECHAT_REQUEST_TIMEOUT_MS=10000
 WECHAT_TOKEN_REFRESH_SKEW_SECONDS=300
 ```
 
+上述生产配置会保留账号、会员和公众号的服务端 JSON 数据，但共享草稿、共享模板和备份 API 会自动关闭，编辑器对应内容改存浏览器 localStorage。不要为了恢复共享草稿而随意把 `ALLOW_UNAUTHENTICATED_REMOTE_STORAGE` 改为 `true`。
+
 生成 `SESSION_SECRET`：
 
 ```bash
@@ -138,7 +140,7 @@ location /wechat-editor/public/ {
     proxy_set_header X-Forwarded-Proto $scheme;
 
     proxy_redirect off;
-    client_max_body_size 2m;
+    client_max_body_size 4m;
     proxy_connect_timeout 10s;
     proxy_read_timeout 60s;
     proxy_send_timeout 60s;

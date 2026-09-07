@@ -2,7 +2,7 @@ import { apiJson } from "./api.js";
 import { canUseServerStorage } from "./config.js";
 import { clearRecovery } from "./autosave.js";
 import { analyzeArticle } from "./statistics.js";
-import { sanitizeEditorHtml, isHtmlEmpty } from "./sanitizer.js?v=2.1.3-src-placeholder-fix";
+import { sanitizeEditorHtml, isHtmlEmpty } from "./sanitizer.js?v=2.2.0";
 import {
   closeModal,
   createId,
@@ -19,6 +19,10 @@ import {
 const LOCAL_DRAFTS_KEY = "wechat-editor-drafts";
 const LEGACY_DRAFT_KEY = "wechat-editor-draft";
 const MAX_LOCAL_DRAFTS = 80;
+
+function shouldFallbackFromCollectionRequest(error) {
+  return error?.code === "SERVER_STORAGE_DISABLED" || error?.status === 404 || (!error?.status && error instanceof TypeError);
+}
 
 function createTitle(html) {
   const text = htmlToPlainText(html).replace(/\s+/g, " ").trim();
@@ -112,6 +116,7 @@ export function createDraftManager(elements, editorController) {
         const payload = await apiJson("/drafts?page=1&pageSize=100");
         return payload.items || payload;
       } catch (error) {
+        if (!shouldFallbackFromCollectionRequest(error)) throw error;
         serverAvailable = false;
       }
     }
@@ -123,6 +128,7 @@ export function createDraftManager(elements, editorController) {
       try {
         return normalizeDraft(await apiJson(`/drafts/${encodeURIComponent(id)}`));
       } catch (error) {
+        if (error.code !== "SERVER_STORAGE_DISABLED") throw error;
         serverAvailable = false;
       }
     }

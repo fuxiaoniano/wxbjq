@@ -4,6 +4,8 @@ const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const test = require("node:test");
 const { convertWechatContent } = require("../server/wechat/content-converter");
+const { readResponseText } = require("../server/wechat/client");
+const { getWechatDraftService } = require("../server/wechat/draft-service");
 const { downloadImage, isPrivateAddress, validateImage } = require("../server/wechat/image-service");
 const { WechatApiError } = require("../server/wechat/errors");
 const { getMembershipService } = require("../server/membership/service");
@@ -82,6 +84,38 @@ test("HTML conversion removes executable markup and preserves safe formatting", 
   assert.doesNotMatch(result.content, /script|onclick|javascript|position/i);
   assert.equal(result.report.removedElements, 3);
   assert.ok(result.report.removedAttributes >= 2);
+});
+
+test("HTML conversion validates content before uploads and normalizes link relations", async () => {
+  let uploads = 0;
+  await assert.rejects(
+    convertWechatContent(`<img src="${png}">`, {
+      uploadImage() {
+        uploads += 1;
+        return "https://mmbiz.qpic.cn/test/image.png";
+      },
+    }),
+    (error) => error.code === "DRAFT_CONTENT_EMPTY",
+  );
+  assert.equal(uploads, 0);
+
+  const converted = await convertWechatContent(
+    '<p style="background:u\\72l(javascript:alert(1));color:#123456">text</p>' +
+      '<a href="https://example.com" rel="opener nofollow">link</a>',
+  );
+  assert.doesNotMatch(converted.content, /javascript|\\72l|\bopener\b/i);
+  assert.match(converted.content, /color:#123456/);
+  assert.match(converted.content, /nofollow/);
+  assert.match(converted.content, /noopener/);
+  assert.match(converted.content, /noreferrer/);
+});
+
+test("WeChat response reading stops at the configured byte limit", async () => {
+  const response = new Response("x".repeat(128));
+  await assert.rejects(
+    readResponseText(response, 32),
+    (error) => error.code === "WECHAT_INVALID_RESPONSE",
+  );
 });
 
 test("image fetch protection rejects private and metadata destinations", async () => {
@@ -189,6 +223,50 @@ test("monthly draft quota blocks additional submissions", async () => {
     });
     assert.equal(second.response.status, 429);
     assert.equal(second.payload.error.code, "QUOTA_EXCEEDED");
+  } finally {
+    await app.close();
+  }
+});
+
+test("a successful remote draft is not reported as failed when local history logging fails", async () => {
+  const app = await createTestApp({ WECHAT_ENABLED: "true", WECHAT_CREDENTIAL_KEY: key });
+  const client = mockWechatClient();
+  app.config.wechatClientInstance = client;
+  try {
+    const user = await verifiedUser(app, "draft-local-history@example.com");
+    await grant(app, user.user.id, "plan_pro");
+    const account = await bind(app, user, "4");
+    const service = getWechatDraftService(app.config);
+    service.repository.draftRecords.insert = async () => {
+      throw new Error("simulated local history failure");
+    };
+
+    const headers = { "Idempotency-Key": "local-history-test-00000001" };
+    const created = await app.post(
+      "/api/wechat/drafts",
+      draftBody(account.payload.id),
+      user.jar,
+      { headers },
+    );
+    assert.equal(created.response.status, 201);
+    assert.equal(created.payload.operation.status, "succeeded");
+    assert.equal(client.calls.filter((item) => item.type === "draft").length, 1);
+
+    const repeated = await app.post(
+      "/api/wechat/drafts",
+      draftBody(account.payload.id),
+      user.jar,
+      { headers },
+    );
+    assert.equal(repeated.response.status, 200);
+    assert.equal(repeated.payload.reused, true);
+    assert.equal(client.calls.filter((item) => item.type === "draft").length, 1);
+
+    const membership = getMembershipService(app.config);
+    const usage = await membership.repository.usage.list(
+      (row) => row.userId === user.user.id && row.featureKey === "wechat.draft.create",
+    );
+    assert.equal(usage[0].count, 1);
   } finally {
     await app.close();
   }

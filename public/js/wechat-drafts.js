@@ -38,6 +38,15 @@ function accountCard(account) {
   return label;
 }
 
+export function createIdempotencyKey(cryptoApi = globalThis.crypto) {
+  if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID();
+  if (typeof cryptoApi?.getRandomValues === "function") {
+    const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
+    return `draft-${[...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  }
+  return `draft-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 export function initWechatDraftUI(authController, editorController, draftManager) {
   const ui = {
     entry: qs("#sendWechatDraftBtn"),
@@ -54,6 +63,7 @@ export function initWechatDraftUI(authController, editorController, draftManager
   };
   let coverDataUrl = "";
   let idempotencyKey = "";
+  let articleVersion = "";
 
   function feedback(message, error = false) {
     ui.feedback.textContent = message || "";
@@ -84,7 +94,7 @@ export function initWechatDraftUI(authController, editorController, draftManager
       coverImage: coverDataUrl || form.elements.coverImage.value,
       needOpenComment: form.elements.needOpenComment.checked,
       onlyFansCanComment: form.elements.onlyFansCanComment.checked,
-      articleVersion: draftManager.currentDraftId || `editor-${Date.now()}`,
+      articleVersion,
     };
   }
 
@@ -129,18 +139,22 @@ export function initWechatDraftUI(authController, editorController, draftManager
     feedback("正在处理图片并保存到微信公众号草稿箱，请不要重复点击...");
     try {
       await readCoverFile();
-      if (!idempotencyKey) idempotencyKey = crypto.randomUUID();
+      if (!idempotencyKey) idempotencyKey = createIdempotencyKey();
       const result = await apiJson("/wechat/drafts", {
         method: "POST",
         headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify(payload()),
       });
       const operation = await pollOperation(result.operation);
-      if (operation.status !== "succeeded") throw new Error(operation.errorMessage || "保存到公众号草稿箱失败");
+      if (operation.status !== "succeeded") {
+        idempotencyKey = "";
+        throw new Error(operation.errorMessage || "保存到公众号草稿箱失败");
+      }
       feedback("已成功保存到公众号草稿箱。", false);
       showToast("已保存到微信公众号草稿箱", "保存成功");
       idempotencyKey = "";
     } catch (error) {
+      if (error.status) idempotencyKey = "";
       feedback(error.message || "保存到公众号草稿箱失败", true);
     } finally {
       ui.submitButton.disabled = false;
@@ -159,6 +173,7 @@ export function initWechatDraftUI(authController, editorController, draftManager
     ui.preview.hidden = true;
     coverDataUrl = "";
     idempotencyKey = "";
+    articleVersion = draftManager.currentDraftId || `editor-${Date.now()}`;
     ui.form.reset();
     ui.form.elements.title.value = currentTitle();
     const firstImage = qs("#editor")?.querySelector("img[src]")?.getAttribute("src") || "";

@@ -1,7 +1,7 @@
 import { appConfig, withBasePath } from "./config.js";
 import { initAuthUI } from "./auth.js";
 import { bindBackupTools } from "./backup.js";
-import { bindCopyReport, beginCopyArticle } from "./clipboard.js?v=2.1.3-src-placeholder-fix";
+import { bindCopyReport, beginCopyArticle } from "./clipboard.js?v=2.2.0";
 import { createAutosave, maybeShowRecovery } from "./autosave.js";
 import { createDraftManager } from "./drafts.js";
 import { createEditorController } from "./editor.js";
@@ -152,9 +152,8 @@ document.addEventListener("keydown", (event) => {
       qs("#membershipModal"),
       qs("#wechatAccountModal"),
       qs("#wechatDraftModal"),
-      qs("#adminModal"),
     ]) {
-      if (!modal.hidden) {
+      if (modal && !modal.hidden) {
         modal.classList.remove("open");
         modal.hidden = true;
         document.body.classList.remove("modal-open");

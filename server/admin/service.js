@@ -13,6 +13,7 @@ const {
   parsePlan,
   parsePlanFeature,
   parseUserUpdate,
+  validateDateRange,
 } = require("./validation");
 
 const serviceCache = new WeakMap();
@@ -110,16 +111,30 @@ function createAdminService(config) {
 
   async function updatePlan(id, body, authContext) {
     const input = parsePlan(body, true);
-    const existing = await repository.plans.findById(id);
-    if (!existing) throw createHttpError(404, "PLAN_NOT_FOUND", "套餐不存在");
-    if (input.slug) {
-      const duplicate = await repository.plans.findOne((row) => row.id !== id && row.slug === input.slug);
-      if (duplicate) throw createHttpError(409, "PLAN_EXISTS", "套餐标识已存在");
-    }
-    if (existing.isDefault && input.active === false) {
-      throw createHttpError(409, "DEFAULT_PLAN_REQUIRED", "默认免费套餐不能停用");
-    }
-    const updated = await repository.plans.updateById(id, input);
+    const updated = await repository.plans.transaction((rows) => {
+      const existing = rows.find((row) => row.id === id);
+      if (!existing) throw createHttpError(404, "PLAN_NOT_FOUND", "套餐不存在");
+      if (input.slug && rows.some((row) => row.id !== id && row.slug === input.slug)) {
+        throw createHttpError(409, "PLAN_EXISTS", "套餐标识已存在");
+      }
+      if (existing.isDefault && (input.active === false || input.isDefault === false)) {
+        throw createHttpError(409, "DEFAULT_PLAN_REQUIRED", "默认免费套餐不能停用或取消默认状态");
+      }
+      if (input.isDefault === true && (input.active === false || (input.active === undefined && existing.active === false))) {
+        throw createHttpError(409, "DEFAULT_PLAN_REQUIRED", "默认套餐必须处于启用状态");
+      }
+      const now = new Date().toISOString();
+      if (input.isDefault === true) {
+        for (const row of rows) {
+          if (row.id !== id && row.isDefault) {
+            row.isDefault = false;
+            row.updatedAt = now;
+          }
+        }
+      }
+      Object.assign(existing, input, { updatedAt: now });
+      return structuredClone(existing);
+    });
     await audit(authContext, "admin.plan_updated", null, { planId: id, changes: input });
     return updated;
   }
@@ -150,8 +165,14 @@ function createAdminService(config) {
     if (input.key && input.key !== existing.key) {
       const duplicate = await repository.features.findOne((row) => row.key === input.key);
       if (duplicate) throw createHttpError(409, "FEATURE_EXISTS", "功能标识已存在");
-      const inUse = await repository.planFeatures.findOne((row) => row.featureKey === existing.key);
-      if (inUse) throw createHttpError(409, "FEATURE_KEY_IN_USE", "已配置套餐的功能标识不能直接修改");
+      const references = await Promise.all([
+        repository.planFeatures.findOne((row) => row.featureKey === existing.key),
+        repository.entitlements.findOne((row) => row.featureKey === existing.key),
+        repository.usage.findOne((row) => row.featureKey === existing.key),
+      ]);
+      if (references.some(Boolean)) {
+        throw createHttpError(409, "FEATURE_KEY_IN_USE", "已有套餐、授权或用量记录的功能标识不能直接修改");
+      }
     }
     const updated = await repository.features.updateById(id, input);
     await audit(authContext, "admin.feature_updated", null, { featureKey: updated.key, changes: input });
@@ -200,6 +221,7 @@ function createAdminService(config) {
     if (!plan || plan.active === false) throw createHttpError(404, "PLAN_NOT_FOUND", "套餐不存在或已停用");
     const created = await repository.memberships.insert({
       ...input,
+      endsAt: input.status === "lifetime" ? null : input.endsAt,
       source: "admin_grant",
       canceledAt: null,
       pausedAt: input.status === "paused" ? new Date().toISOString() : null,
@@ -209,7 +231,7 @@ function createAdminService(config) {
       membershipId: created.id,
       planId: input.planId,
       status: input.status,
-      endsAt: input.endsAt,
+      endsAt: created.endsAt,
     });
     return created;
   }
@@ -224,6 +246,8 @@ function createAdminService(config) {
       if (!plan) throw createHttpError(404, "PLAN_NOT_FOUND", "套餐不存在");
     }
     const patch = { ...input };
+    if (input.status === "lifetime") patch.endsAt = null;
+    validateDateRange(input.startsAt || existing.startsAt, patch.endsAt === undefined ? existing.endsAt : patch.endsAt);
     if (input.status === "paused") patch.pausedAt = new Date().toISOString();
     if (input.status === "canceled") patch.canceledAt = new Date().toISOString();
     const updated = await repository.memberships.updateById(id, patch);
@@ -253,10 +277,13 @@ function createAdminService(config) {
     ]);
     if (!user) throw createHttpError(404, "USER_NOT_FOUND", "用户不存在");
     if (!feature) throw createHttpError(404, "FEATURE_NOT_FOUND", "功能不存在");
+    const startsAt = input.startsAt || new Date().toISOString();
+    const endsAt = input.endsAt || null;
+    validateDateRange(startsAt, endsAt);
     const created = await repository.entitlements.insert({
       ...input,
-      startsAt: input.startsAt || new Date().toISOString(),
-      endsAt: input.endsAt || null,
+      startsAt,
+      endsAt,
       quotaLimit: input.quotaLimit ?? null,
       quotaPeriod: input.quotaPeriod || null,
       createdBy: authContext.user.id,
@@ -278,6 +305,7 @@ function createAdminService(config) {
       const feature = await repository.features.findOne((row) => row.key === input.featureKey);
       if (!feature) throw createHttpError(404, "FEATURE_NOT_FOUND", "功能不存在");
     }
+    validateDateRange(input.startsAt || existing.startsAt, input.endsAt === undefined ? existing.endsAt : input.endsAt);
     const updated = await repository.entitlements.updateById(id, input);
     await audit(authContext, "admin.entitlement_updated", existing.userId, { entitlementId: id, changes: input });
     return updated;

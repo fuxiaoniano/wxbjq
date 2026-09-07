@@ -226,9 +226,16 @@ export function initAuthUI() {
     if (!raw) return;
     const separator = raw.indexOf("=");
     const action = separator > 0 ? raw.slice(0, separator) : "";
-    const token = separator > 0 ? decodeURIComponent(raw.slice(separator + 1)) : "";
-    if (!token || !["verify-email", "reset-password"].includes(action)) return;
+    if (!["verify-email", "reset-password"].includes(action)) return;
     history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    let token = "";
+    try {
+      token = separator > 0 ? decodeURIComponent(raw.slice(separator + 1)) : "";
+    } catch (error) {
+      openAuth("login", "邮件链接格式不正确，请重新申请", true);
+      return;
+    }
+    if (!token) return;
     if (action === "reset-password") {
       elements.resetForm.elements.token.value = token;
       openAuth("reset");

@@ -72,6 +72,16 @@ function shouldUseBackupRateLimit(pathname) {
   return pathname === "/api/backup/import" || pathname === "/api/backup/export";
 }
 
+function isEditorStoragePath(pathname) {
+  return (
+    pathname === "/api/drafts" ||
+    pathname.startsWith("/api/drafts/") ||
+    pathname === "/api/system-templates" ||
+    pathname.startsWith("/api/system-templates/") ||
+    pathname.startsWith("/api/backup/")
+  );
+}
+
 function isWriteMethod(method) {
   return ["POST", "PUT", "PATCH", "DELETE"].includes(method);
 }
@@ -105,8 +115,8 @@ async function handleApi(req, res, requestUrl, config, pathname) {
       serverStorageEnabled: config.serverStorageEnabled,
       basePath: publicBasePath(config),
       storage: {
-        drafts: config.serverStorageEnabled,
-        templates: config.serverStorageEnabled,
+        drafts: config.editorStorageEnabled,
+        templates: config.editorStorageEnabled,
       },
       auth: {
         enabled: config.authEnabled,
@@ -115,6 +125,11 @@ async function handleApi(req, res, requestUrl, config, pathname) {
       },
       wechat: { enabled: config.wechat.enabled },
     });
+    return;
+  }
+
+  if (isEditorStoragePath(pathname) && !config.editorStorageEnabled) {
+    sendError(res, 403, "SERVER_STORAGE_DISABLED", "当前部署模式未启用共享编辑器存储");
     return;
   }
 
@@ -221,7 +236,7 @@ function injectIndexConfig(html, config) {
     )
     .replace(
       /<meta name="server-storage-enabled" content="[^"]*"\s*\/?>/i,
-      `<meta name="server-storage-enabled" content="${String(config.serverStorageEnabled)}" />`,
+      `<meta name="server-storage-enabled" content="${String(config.editorStorageEnabled)}" />`,
     )
     .replace(
       /<meta name="auth-enabled" content="[^"]*"\s*\/?>/i,
@@ -296,17 +311,26 @@ async function handleRequest(req, res, config) {
     return;
   }
 
+  const decoded = safeDecodePath(requestUrl.pathname);
+  if (!decoded.ok) {
+    sendError(res, 400, decoded.code, decoded.message);
+    return;
+  }
+
+  if (
+    config.basePath &&
+    decoded.value !== config.basePath &&
+    !decoded.value.startsWith(`${config.basePath}/`)
+  ) {
+    sendError(res, 404, "NOT_FOUND", "资源不存在");
+    return;
+  }
+
   const canonicalLocation = canonicalHttpsLocation(req, config, requestUrl);
   if (canonicalLocation) {
     applySecurityHeaders(res, { Location: canonicalLocation, "Cache-Control": "no-store" });
     res.writeHead(308);
     res.end();
-    return;
-  }
-
-  const decoded = safeDecodePath(requestUrl.pathname);
-  if (!decoded.ok) {
-    sendError(res, 400, decoded.code, decoded.message);
     return;
   }
 

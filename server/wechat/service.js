@@ -1,6 +1,7 @@
 "use strict";
 
 const { createId } = require("../data/json-collection-repository");
+const { logError } = require("../logging");
 const { createHttpError } = require("../security");
 const { getAuthService } = require("../auth/service");
 const { getMembershipService } = require("../membership/service");
@@ -64,15 +65,19 @@ function createWechatService(config) {
 
   async function audit(authContext, action, accountId, metadata = {}, outcome = "success") {
     const requestContext = auth.contextFromRequest(authContext.req);
-    await auth.audit.record({
-      actorUserId: authContext.user.id,
-      targetUserId: authContext.user.id,
-      action,
-      outcome,
-      ipHash: requestContext.ipHash,
-      userAgent: requestContext.userAgent,
-      metadata: { accountId: accountId || null, ...metadata },
-    });
+    try {
+      await auth.audit.record({
+        actorUserId: authContext.user.id,
+        targetUserId: authContext.user.id,
+        action,
+        outcome,
+        ipHash: requestContext.ipHash,
+        userAgent: requestContext.userAgent,
+        metadata: { accountId: accountId || null, ...metadata },
+      });
+    } catch (error) {
+      logError("wechat-audit", error);
+    }
   }
 
   async function accountLimit(user, currentCount) {

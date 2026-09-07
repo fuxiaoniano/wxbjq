@@ -292,7 +292,14 @@ elements.userForm.addEventListener("submit", async (event) => {
     await loadData();
     setFeedback("账号状态已保存");
   } catch (error) { setFeedback(error.message || "账号保存失败", true); }
-  finally { setBusy(elements.userForm, false); }
+  finally {
+    setBusy(elements.userForm, false);
+    if (selectedUser()?.isSuperAdmin) {
+      elements.userForm.elements.status.disabled = true;
+      elements.userForm.elements.role.disabled = true;
+      elements.userForm.elements.emailVerified.disabled = true;
+    }
+  }
 });
 
 elements.membershipForm.addEventListener("submit", async (event) => {

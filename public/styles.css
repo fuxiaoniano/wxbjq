@@ -1641,15 +1641,8 @@ body.modal-open {
   border-radius: 8px;
 }
 
-.admin-modal {
-  width: min(96vw, 1080px);
-  max-height: 92vh;
-  border-radius: 8px;
-}
-
 .account-modal-content,
-.membership-content,
-.admin-content {
+.membership-content {
   max-height: calc(88vh - 82px);
   overflow-y: auto;
 }
@@ -1662,10 +1655,6 @@ body.modal-open {
   background: rgba(113, 130, 141, 0.1);
   border: 1px solid rgba(113, 130, 141, 0.14);
   border-radius: 8px;
-}
-
-.segmented-control.admin-tabs {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .segmented-control button {
@@ -1852,17 +1841,6 @@ body.modal-open {
   margin-left: 0;
 }
 
-.admin-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.admin-grid.two-column-admin {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 .admin-form {
   min-width: 0;
   padding: 14px;
@@ -1886,10 +1864,6 @@ body.modal-open {
 }
 
 .admin-record-list {
-  margin-top: 12px;
-}
-
-.plan-feature-form {
   margin-top: 12px;
 }
 
@@ -2047,18 +2021,11 @@ body.modal-open {
     max-height: 86vh;
   }
 
-  .admin-modal,
   .membership-modal {
     max-height: 90vh;
   }
 
-  .admin-grid,
-  .admin-grid.two-column-admin,
   .admin-inline-fields {
-    grid-template-columns: 1fr;
-  }
-
-  .segmented-control.admin-tabs {
     grid-template-columns: 1fr;
   }
 

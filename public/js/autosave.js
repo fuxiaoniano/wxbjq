@@ -1,4 +1,4 @@
-import { sanitizeEditorHtml } from "./sanitizer.js?v=2.1.3-src-placeholder-fix";
+import { sanitizeEditorHtml } from "./sanitizer.js?v=2.2.0";
 import { closeModal, debounce, openModal, readLocalJson, removeLocalKey, showToast, writeLocalJson } from "./utils.js";
 
 const RECOVERY_KEY = "wechat-editor-recovery-v1";

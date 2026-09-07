@@ -1,6 +1,6 @@
 import { analyzeArticle } from "./statistics.js";
-import { sanitizeEditorHtml, isHtmlEmpty } from "./sanitizer.js?v=2.1.3-src-placeholder-fix";
-import { inspectWechatCompatibility, normalizeWechatHtml } from "./wechat-compatibility.js?v=2.1.3-src-placeholder-fix";
+import { sanitizeEditorHtml, isHtmlEmpty } from "./sanitizer.js?v=2.2.0";
+import { inspectWechatCompatibility, normalizeWechatHtml } from "./wechat-compatibility.js?v=2.2.0";
 import { closeModal, formatBytes, htmlToPlainText, openModal, showToast } from "./utils.js";
 
 let pendingCopy = null;
@@ -50,9 +50,10 @@ async function writeClipboard(html) {
   const selection = window.getSelection();
   selection.removeAllRanges();
   selection.addRange(range);
-  document.execCommand("copy");
+  const copied = document.execCommand("copy");
   selection.removeAllRanges();
   box.remove();
+  if (!copied) throw new Error("浏览器拒绝了复制请求");
 }
 
 async function copyPreparedHtml(html) {

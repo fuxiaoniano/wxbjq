@@ -74,9 +74,11 @@ async function writeJsonAtomic(filePath, value) {
   try {
     await fs.promises.writeFile(tempPath, serialized, "utf8");
     try {
+      const current = await fs.promises.readFile(filePath, "utf8");
+      JSON.parse(current);
       await fs.promises.copyFile(filePath, backupPath);
     } catch (error) {
-      if (error.code !== "ENOENT") throw error;
+      if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
     }
     await fs.promises.rename(tempPath, filePath);
   } catch (error) {

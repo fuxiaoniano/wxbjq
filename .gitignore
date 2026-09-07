@@ -1,6 +1,8 @@
-data/
+/data/
+/local-showcase/
 .server-*.log
-node_modules/
+/node_modules/
+/.pnpm-store/
 .env
 .env.*
 !.env.example

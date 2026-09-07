@@ -14,6 +14,13 @@ function isWithinRange(record, now = Date.now()) {
 
 function effectiveMembershipStatus(record, now = Date.now()) {
   if (!record) return "free";
+  if (
+    ACTIVE_MEMBERSHIP_STATUSES.has(record.status) &&
+    record.startsAt &&
+    new Date(record.startsAt).getTime() > now
+  ) {
+    return "scheduled";
+  }
   if (record.status === "lifetime") return "lifetime";
   if (record.status === "paused") return "paused";
   if (record.status === "canceled") return "canceled";
@@ -26,7 +33,7 @@ function effectiveMembershipStatus(record, now = Date.now()) {
 
 function membershipIsActive(record, now = Date.now()) {
   if (!record || !ACTIVE_MEMBERSHIP_STATUSES.has(record.status)) return false;
-  return record.status === "lifetime" || isWithinRange(record, now);
+  return isWithinRange(record, now);
 }
 
 function periodKey(period, now = new Date()) {
@@ -263,6 +270,9 @@ function createMembershipService(config) {
   }
 
   async function refundFeatureUsage(user, featureKey, amount = 1) {
+    if (!Number.isInteger(amount) || amount < 1 || amount > 1000) {
+      throw createHttpError(422, "INVALID_USAGE_AMOUNT", "使用量参数不正确");
+    }
     const access = await resolveFeature(user, featureKey);
     if (!access.quotaPeriod || access.quotaLimit === null) return access;
     const key = periodKey(access.quotaPeriod);

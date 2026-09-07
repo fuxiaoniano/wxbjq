@@ -263,6 +263,7 @@ function readJsonBody(req, maxBytes, timeoutMs = 10_000) {
       if (totalBytes > maxBytes) {
         req.pause();
         finish(reject, createHttpError(413, "PAYLOAD_TOO_LARGE", "请求体过大"));
+        req.resume();
         return;
       }
       chunks.push(chunk);
@@ -287,6 +288,13 @@ function readJsonBody(req, maxBytes, timeoutMs = 10_000) {
 
     function onError() {
       finish(reject, createHttpError(400, "INVALID_REQUEST", "请求格式不正确"));
+    }
+
+    const declaredBytes = Number(req.headers["content-length"] || 0);
+    if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) {
+      finish(reject, createHttpError(413, "PAYLOAD_TOO_LARGE", "请求体过大"));
+      req.resume();
+      return;
     }
 
     req.setTimeout(timeoutMs, () => {

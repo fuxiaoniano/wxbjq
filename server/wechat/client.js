@@ -4,6 +4,32 @@ const { WechatApiError } = require("./errors");
 
 const MAX_RESPONSE_BYTES = 64 * 1024;
 
+async function readResponseText(response, maxBytes = MAX_RESPONSE_BYTES) {
+  if (!response.body || typeof response.body.getReader !== "function") {
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf8") > maxBytes) {
+      throw new WechatApiError(null, "response_too_large", { code: "WECHAT_INVALID_RESPONSE" });
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = Buffer.from(value);
+    bytes += chunk.length;
+    if (bytes > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new WechatApiError(null, "response_too_large", { code: "WECHAT_INVALID_RESPONSE" });
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, bytes).toString("utf8");
+}
+
 function createWechatClient(config) {
   if (config.wechatClientInstance) return config.wechatClientInstance;
   const baseUrl = new URL(config.wechat.apiBaseUrl);
@@ -13,10 +39,7 @@ function createWechatClient(config) {
     const timeout = setTimeout(() => controller.abort(), config.wechat.requestTimeoutMs);
     try {
       const response = await fetch(new URL(pathname, baseUrl), { ...options, signal: controller.signal });
-      const text = await response.text();
-      if (Buffer.byteLength(text, "utf8") > MAX_RESPONSE_BYTES) {
-        throw new WechatApiError(null, "response_too_large", { code: "WECHAT_INVALID_RESPONSE" });
-      }
+      const text = await readResponseText(response);
       let payload;
       try {
         payload = JSON.parse(text);
@@ -102,4 +125,5 @@ function createWechatClient(config) {
 module.exports = {
   MAX_RESPONSE_BYTES,
   createWechatClient,
+  readResponseText,
 };

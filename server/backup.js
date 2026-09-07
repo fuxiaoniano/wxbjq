@@ -11,11 +11,12 @@ const {
   listJsonFiles,
   readJsonFile,
   safeJsonFile,
+  withJsonFileLock,
   writeJsonAtomic,
 } = require("./storage");
 const { createHttpError } = require("./security");
 
-async function exportBackup(config) {
+async function exportBackupUnlocked(config) {
   const drafts = [];
   for (const file of await listJsonFiles(config.draftsDir)) {
     try {
@@ -33,6 +34,13 @@ async function exportBackup(config) {
     templates: Array.isArray(templates) ? templates : [],
     settings,
   };
+}
+
+async function exportBackup(config) {
+  const draftLock = path.join(config.draftsDir, ".drafts.lock");
+  return withJsonFileLock(draftLock, () =>
+    withJsonFileLock(config.systemTemplatesFile, () => exportBackupUnlocked(config)),
+  );
 }
 
 function validateBackupPayload(payload) {
@@ -82,11 +90,13 @@ function uniquifyImportedItems(items, usedIds, prefix) {
   return { items: next, renamed };
 }
 
-async function importBackup(config, payload) {
+async function importBackupUnlocked(config, payload) {
   const backup = validateBackupPayload(payload);
   const mode = payload?.mode === "overwrite" ? "overwrite" : "merge";
   const normalizedDrafts = backup.drafts.map((draft) => normalizeDraft(draft, config, draft, { keepUpdatedAt: true }));
-  const normalizedTemplates = backup.templates.map((template) => normalizeTemplate(template, config, template));
+  const normalizedTemplates = backup.templates.map((template) =>
+    normalizeTemplate(template, config, template, { keepUpdatedAt: true }),
+  );
   const settings = normalizeSettings(backup.settings || {});
   const existingDraftIds = mode === "merge" ? await listDraftIds(config) : [];
   const existingTemplates = mode === "merge" ? await readJsonFile(config.systemTemplatesFile, []) : [];
@@ -152,6 +162,13 @@ async function importBackup(config, payload) {
     settingsImported: true,
     draftSummaries: uniqueDrafts.items.map(summarizeDraft),
   };
+}
+
+async function importBackup(config, payload) {
+  const draftLock = path.join(config.draftsDir, ".drafts.lock");
+  return withJsonFileLock(draftLock, () =>
+    withJsonFileLock(config.systemTemplatesFile, () => importBackupUnlocked(config, payload)),
+  );
 }
 
 module.exports = {

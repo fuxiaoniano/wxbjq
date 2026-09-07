@@ -81,7 +81,18 @@ test("members can bind multiple accounts while tenant isolation and token secrec
     const firstUser = await registerVerifiedUser(app, "first@example.com", "FirstSecure123!");
     const secondUser = await registerVerifiedUser(app, "second@example.com", "SecondSecure123!");
     const owner = await registerVerifiedUser(app, "owner@example.com", "OwnerSecure123!");
-    const freeDenied = await app.json("/api/wechat/accounts", {}, firstUser.jar);
+    const freeList = await app.json("/api/wechat/accounts", {}, firstUser.jar);
+    assert.equal(freeList.response.status, 200);
+    assert.deepEqual(freeList.payload.items, []);
+    const freeDenied = await app.post(
+      "/api/wechat/accounts",
+      {
+        displayName: "Free account",
+        appId: testWechatAppId("0000000000000001"),
+        appSecret: testWechatAppSecret("free"),
+      },
+      firstUser.jar,
+    );
     assert.equal(freeDenied.response.status, 403);
     assert.equal(freeDenied.payload.error.code, "MEMBERSHIP_REQUIRED");
     await grantMembership(app, firstUser.user.id, "plan_business");
@@ -184,6 +195,29 @@ test("members can bind multiple accounts while tenant isolation and token secrec
     assert.equal(adminList.response.status, 200);
     assert.equal(adminList.payload.items.length, 3);
     assert.ok(adminList.payload.items.every((item) => !Object.hasOwn(item, "encryptedAppSecret")));
+
+    const membershipService = getMembershipService(app.config);
+    await membershipService.repository.memberships.transaction((rows) => {
+      const membership = rows.find((row) => row.userId === firstUser.user.id);
+      membership.endsAt = new Date(Date.now() - 1000).toISOString();
+      membership.updatedAt = new Date().toISOString();
+    });
+    const expiredList = await app.json("/api/wechat/accounts", {}, firstUser.jar);
+    assert.equal(expiredList.response.status, 200);
+    assert.equal(expiredList.payload.items.length, 2);
+    const expiredUpdate = await app.post(
+      `/api/wechat/accounts/${createdFirst.payload.id}`,
+      { isDefault: true },
+      firstUser.jar,
+      { method: "PATCH" },
+    );
+    assert.equal(expiredUpdate.response.status, 403);
+    const expiredVerify = await app.post(
+      `/api/wechat/accounts/${createdFirst.payload.id}/verify`,
+      {},
+      firstUser.jar,
+    );
+    assert.equal(expiredVerify.response.status, 403);
 
     const removed = await app.post(
       `/api/wechat/accounts/${createdSecond.payload.id}`,

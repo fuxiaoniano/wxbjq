@@ -6,6 +6,7 @@ const http = require("node:http");
 const https = require("node:https");
 const net = require("node:net");
 const path = require("node:path");
+const { logError } = require("../logging");
 const { createHttpError } = require("../security");
 
 const TRUSTED_WECHAT_IMAGE_HOSTS = new Set(["mmbiz.qpic.cn", "mmbiz.qlogo.cn"]);
@@ -104,19 +105,29 @@ async function downloadImage(source, config, maxBytes, redirectsLeft = config.we
     }, (response) => {
       if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
         response.resume();
+        settled = true;
         if (redirectsLeft <= 0) return reject(createHttpError(422, "IMAGE_REDIRECT_LIMIT", "图片地址重定向次数过多"));
         return downloadImage(new URL(response.headers.location, url).toString(), config, maxBytes, redirectsLeft - 1).then(resolve, reject);
       }
       if (response.statusCode !== 200) {
         response.resume();
+        settled = true;
         return reject(createHttpError(422, "IMAGE_DOWNLOAD_FAILED", "图片下载失败"));
+      }
+      const declaredBytes = Number(response.headers["content-length"] || 0);
+      if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) {
+        settled = true;
+        response.destroy();
+        return reject(createHttpError(413, "IMAGE_TOO_LARGE", "图片文件过大"));
       }
       const chunks = [];
       let bytes = 0;
       response.on("data", (chunk) => {
+        if (settled) return;
         bytes += chunk.length;
         if (bytes > maxBytes) {
-          request.destroy();
+          settled = true;
+          response.destroy();
           reject(createHttpError(413, "IMAGE_TOO_LARGE", "图片文件过大"));
         } else chunks.push(chunk);
       });
@@ -125,6 +136,16 @@ async function downloadImage(source, config, maxBytes, redirectsLeft = config.we
           settled = true;
           resolve(Buffer.concat(chunks, bytes));
         }
+      });
+      response.on("aborted", () => {
+        if (settled) return;
+        settled = true;
+        reject(createHttpError(422, "IMAGE_DOWNLOAD_FAILED", "图片下载失败"));
+      });
+      response.on("error", (error) => {
+        if (settled) return;
+        settled = true;
+        reject(error.statusCode ? error : createHttpError(422, "IMAGE_DOWNLOAD_FAILED", "图片下载失败"));
       });
     });
     request.setTimeout(config.wechat.imageDownloadTimeoutMs, () => request.destroy(createHttpError(408, "IMAGE_DOWNLOAD_TIMEOUT", "图片下载超时")));
@@ -163,7 +184,9 @@ function createWechatImageService(config, repository, client, tokenService) {
       filename: `article-${image.hash.slice(0, 12)}${image.extension}`,
       mimeType: image.mimeType,
     }));
-    await repository.imageCache.insert({ userId: account.userId, accountId: account.id, kind: "content", hash: image.hash, wechatUrl: result.url });
+    await repository.imageCache
+      .insert({ userId: account.userId, accountId: account.id, kind: "content", hash: image.hash, wechatUrl: result.url })
+      .catch((error) => logError("wechat-image-cache", error));
     return result.url;
   }
 
@@ -178,7 +201,9 @@ function createWechatImageService(config, repository, client, tokenService) {
       filename: `cover-${image.hash.slice(0, 12)}${image.extension}`,
       mimeType: image.mimeType,
     }));
-    await repository.imageCache.insert({ userId: account.userId, accountId: account.id, kind: "cover", hash: image.hash, mediaId: result.mediaId });
+    await repository.imageCache
+      .insert({ userId: account.userId, accountId: account.id, kind: "cover", hash: image.hash, mediaId: result.mediaId })
+      .catch((error) => logError("wechat-image-cache", error));
     return result.mediaId;
   }
 

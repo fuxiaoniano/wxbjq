@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const { createId } = require("../data/json-collection-repository");
+const { logError } = require("../logging");
 const { createHttpError, HttpError } = require("../security");
 const { getAuthService } = require("../auth/service");
 const { getMembershipService } = require("../membership/service");
@@ -45,15 +46,28 @@ function createWechatDraftService(config) {
 
   async function audit(authContext, action, operationId, accountId, metadata = {}, outcome = "success") {
     const context = auth.contextFromRequest(authContext.req);
-    await auth.audit.record({
-      actorUserId: authContext.user.id,
-      targetUserId: authContext.user.id,
-      action,
-      outcome,
-      ipHash: context.ipHash,
-      userAgent: context.userAgent,
-      metadata: { operationId, accountId, ...metadata },
-    });
+    try {
+      await auth.audit.record({
+        actorUserId: authContext.user.id,
+        targetUserId: authContext.user.id,
+        action,
+        outcome,
+        ipHash: context.ipHash,
+        userAgent: context.userAgent,
+        metadata: { operationId, accountId, ...metadata },
+      });
+    } catch (error) {
+      logError("wechat-draft-audit", error);
+    }
+  }
+
+  async function bestEffort(scope, callback) {
+    try {
+      return await callback();
+    } catch (error) {
+      logError(scope, error);
+      return null;
+    }
   }
 
   async function ownedActiveAccount(userId, accountId) {
@@ -140,6 +154,8 @@ function createWechatDraftService(config) {
     let quotaConsumed = false;
     try {
       const account = await ownedActiveAccount(authContext.user.id, input.accountId);
+      await membership.consumeFeatureUsage(authContext.user, "wechat.draft.create", 1);
+      quotaConsumed = true;
       const converted = await convertWechatContent(input.content, {
         maxBytes: config.wechat.draftHtmlMaxBytes,
         maxCharacters: config.wechat.draftTextMaxCharacters,
@@ -157,17 +173,23 @@ function createWechatDraftService(config) {
         need_open_comment: input.needOpenComment,
         only_fans_can_comment: input.onlyFansCanComment,
       };
-      await membership.consumeFeatureUsage(authContext.user, "wechat.draft.create", 1);
-      quotaConsumed = true;
       const result = await wechat.tokenService.withAccessToken(account, (accessToken) => client.createDraft(accessToken, article));
       const completedAt = new Date().toISOString();
-      const updated = await updateOperation(operation.id, authContext.user.id, {
+      const successPatch = {
         status: "succeeded",
         mediaId: result.mediaId,
         report: converted.report,
         completedAt,
-      });
-      await repository.draftRecords.insert({
+      };
+      const updated = await bestEffort("wechat-draft-operation", () =>
+        updateOperation(operation.id, authContext.user.id, successPatch),
+      );
+      const successfulOperation = updated || {
+        ...operation,
+        ...successPatch,
+        updatedAt: completedAt,
+      };
+      await bestEffort("wechat-draft-record", () => repository.draftRecords.insert({
         userId: authContext.user.id,
         accountId: account.id,
         operationId: operation.id,
@@ -175,35 +197,48 @@ function createWechatDraftService(config) {
         mediaId: result.mediaId,
         articleVersion: input.articleVersion,
         status: "succeeded",
-      });
-      await repository.updateOwnedAccount(account.userId, account.id, {
+      }));
+      await bestEffort("wechat-account-permission", () => repository.updateOwnedAccount(account.userId, account.id, {
         permissions: { ...account.permissions, draftApi: true },
-      });
+      }));
       await audit(authContext, "wechat.draft_created", operation.id, account.id, { mediaIdSuffix: result.mediaId.slice(-8) });
-      return { operation: safeOperation(updated), reused: false };
+      return { operation: safeOperation(successfulOperation), reused: false };
     } catch (error) {
-      if (quotaConsumed) await membership.refundFeatureUsage(authContext.user, "wechat.draft.create", 1).catch(() => {});
+      if (quotaConsumed) {
+        await bestEffort("wechat-draft-quota-refund", () =>
+          membership.refundFeatureUsage(authContext.user, "wechat.draft.create", 1),
+        );
+      }
       const safeError = error instanceof HttpError ? error : toHttpError(error);
       const completedAt = new Date().toISOString();
-      const failed = await updateOperation(operation.id, authContext.user.id, {
+      const errorCode = safeError.code || "WECHAT_DRAFT_CREATE_FAILED";
+      const failed = await bestEffort("wechat-draft-operation", () => updateOperation(operation.id, authContext.user.id, {
         status: "failed",
-        errorCode: safeError.code || "WECHAT_DRAFT_CREATE_FAILED",
+        errorCode,
         errorMessage: safeError.publicMessage || safeError.message || "保存到微信草稿箱失败",
         completedAt,
-      });
-      await repository.draftRecords.insert({
+      }));
+      await bestEffort("wechat-draft-record", () => repository.draftRecords.insert({
         userId: authContext.user.id,
         accountId: input.accountId,
         operationId: operation.id,
         title: input.title,
         status: "failed",
-        errorCode: failed.errorCode,
-      });
+        errorCode: failed?.errorCode || errorCode,
+      }));
       if (error instanceof WechatApiError && error.code === "WECHAT_DRAFT_PERMISSION_DENIED") {
         const account = await repository.findOwnedAccount(authContext.user.id, input.accountId);
-        if (account) await repository.updateOwnedAccount(account.userId, account.id, { permissions: { ...account.permissions, draftApi: false } });
+        if (account) {
+          await bestEffort("wechat-account-permission", () =>
+            repository.updateOwnedAccount(account.userId, account.id, {
+              permissions: { ...account.permissions, draftApi: false },
+            }),
+          );
+        }
       }
-      await audit(authContext, "wechat.draft_create_failed", operation.id, input.accountId, { errorCode: failed.errorCode }, "failed");
+      await audit(authContext, "wechat.draft_create_failed", operation.id, input.accountId, {
+        errorCode: failed?.errorCode || errorCode,
+      }, "failed");
       throw safeError;
     }
   }

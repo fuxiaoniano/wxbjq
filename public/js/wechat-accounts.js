@@ -54,9 +54,10 @@ export function initWechatAccountsUI(authController) {
     ui.form.elements.displayName.focus();
   }
 
-  async function action(button, operation, successMessage) {
+  async function action(button, operation, successMessage, needsAccess = false) {
     button.disabled = true;
     try {
+      if (needsAccess && !(await requireFeature("wechat.account.bind"))) return;
       await operation();
       if (successMessage) showToast(successMessage);
       await loadAccounts();
@@ -88,7 +89,7 @@ export function initWechatAccountsUI(authController) {
     const buttons = element("div", "wechat-account-actions");
     const verify = element("button", "button ghost small", "测试连接");
     verify.type = "button";
-    verify.addEventListener("click", () => action(verify, () => apiJson(`/wechat/accounts/${account.id}/verify`, { method: "POST", body: "{}" }), "连接验证成功"));
+    verify.addEventListener("click", () => action(verify, () => apiJson(`/wechat/accounts/${account.id}/verify`, { method: "POST", body: "{}" }), "连接验证成功", true));
     const edit = element("button", "button ghost small", "修改");
     edit.type = "button";
     edit.addEventListener("click", () => beginEdit(account));
@@ -96,7 +97,7 @@ export function initWechatAccountsUI(authController) {
     if (!account.isDefault) {
       const makeDefault = element("button", "button ghost small", "设为默认");
       makeDefault.type = "button";
-      makeDefault.addEventListener("click", () => action(makeDefault, () => apiJson(`/wechat/accounts/${account.id}`, { method: "PATCH", body: JSON.stringify({ isDefault: true }) }), "默认公众号已更新"));
+      makeDefault.addEventListener("click", () => action(makeDefault, () => apiJson(`/wechat/accounts/${account.id}`, { method: "PATCH", body: JSON.stringify({ isDefault: true }) }), "默认公众号已更新", true));
       buttons.append(makeDefault);
     }
     const remove = element("button", "button danger small", "解绑");
@@ -130,8 +131,6 @@ export function initWechatAccountsUI(authController) {
       authController.openAuth("login", "请先登录后管理公众号");
       return;
     }
-    const access = await requireFeature("wechat.account.bind");
-    if (!access) return;
     feedback("");
     resetForm();
     openModal(ui.modal);
@@ -154,6 +153,7 @@ export function initWechatAccountsUI(authController) {
     };
     if (form.elements.appId.value) payload.appId = form.elements.appId.value;
     if (form.elements.appSecret.value) payload.appSecret = form.elements.appSecret.value;
+    if (!(await requireFeature("wechat.account.bind"))) return;
     setBusy(true);
     feedback(accountId ? "正在保存公众号..." : "正在验证公众号凭据...");
     try {

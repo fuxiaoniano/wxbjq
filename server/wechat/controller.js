@@ -15,8 +15,6 @@ async function handleWechatApi(req, res, requestUrl, config, pathname, readBody)
   const auth = getAuthService(config);
   const authContext = requireVerifiedEmail(await auth.authenticateRequest(req));
   authContext.req = req;
-  const isDraftRoute = pathname.startsWith("/api/wechat/drafts") || pathname === "/api/wechat/draft-records";
-  if (!isDraftRoute) await getMembershipService(config).requireFeature(authContext.user, "wechat.account.bind");
   if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
     verifyWriteRequest(req, config);
     auth.requireCsrf(req, authContext);
@@ -56,6 +54,7 @@ async function handleWechatApi(req, res, requestUrl, config, pathname, readBody)
 
   const accountMatch = pathname.match(/^\/api\/wechat\/accounts\/([A-Za-z0-9_-]+)$/);
   if (accountMatch && method === "PATCH") {
+    await getMembershipService(config).requireFeature(authContext.user, "wechat.account.bind");
     sendJson(res, 200, await wechat.updateAccount(accountMatch[1], await readBody(req, config), authContext));
     return true;
   }
@@ -67,6 +66,7 @@ async function handleWechatApi(req, res, requestUrl, config, pathname, readBody)
 
   const verifyMatch = pathname.match(/^\/api\/wechat\/accounts\/([A-Za-z0-9_-]+)\/verify$/);
   if (verifyMatch && method === "POST") {
+    await getMembershipService(config).requireFeature(authContext.user, "wechat.account.bind");
     sendJson(res, 200, await wechat.verifyAccount(verifyMatch[1], authContext));
     return true;
   }

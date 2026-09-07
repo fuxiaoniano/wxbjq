@@ -24,6 +24,14 @@ test("membership status reflects active, expired, canceled, paused and lifetime 
   assert.equal(effectiveMembershipStatus({ ...active, status: "canceled" }, now), "canceled");
   assert.equal(effectiveMembershipStatus({ ...active, status: "paused" }, now), "paused");
   assert.equal(effectiveMembershipStatus({ status: "lifetime" }, now), "lifetime");
+  assert.equal(
+    membershipIsActive({ status: "lifetime", startsAt: "2026-07-11T00:00:00.000Z" }, now),
+    false,
+  );
+  assert.equal(
+    effectiveMembershipStatus({ status: "lifetime", startsAt: "2026-07-11T00:00:00.000Z" }, now),
+    "scheduled",
+  );
 });
 
 test("feature usage period keys are stable for daily, monthly and lifetime quotas", () => {

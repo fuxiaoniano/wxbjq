@@ -1,14 +1,14 @@
 "use strict";
 
 const { sanitizeStoredHtml, isHtmlEffectivelyEmpty } = require("./sanitizer");
-const { createStorageId, isSafeId, readJsonFile, writeJsonAtomic } = require("./storage");
+const { createStorageId, isSafeId, readJsonFile, withJsonFileLock, writeJsonAtomic } = require("./storage");
 const { createHttpError } = require("./security");
 
 function byteLength(value) {
   return Buffer.byteLength(String(value || ""), "utf8");
 }
 
-function normalizeTemplate(input, config, existing = null) {
+function normalizeTemplate(input, config, existing = null, options = {}) {
   const rawHtml = String(input?.html || "");
   if (byteLength(rawHtml) > config.maxTemplateHtmlBytes) {
     throw createHttpError(413, "TEMPLATE_HTML_TOO_LARGE", "模板 HTML 超出大小限制");
@@ -30,21 +30,21 @@ function normalizeTemplate(input, config, existing = null) {
     category: String(input?.category || existing?.category || "自定义模板").trim().slice(0, 80) || "自定义模板",
     html,
     createdAt: existing?.createdAt || input?.createdAt || now,
-    updatedAt: now,
+    updatedAt: options.keepUpdatedAt ? input?.updatedAt || existing?.updatedAt || now : now,
     bytes: byteLength(html),
     schemaVersion: 1,
     cleanReport: result.report,
   };
 }
 
-async function readTemplates(config) {
+async function readTemplatesUnlocked(config) {
   const raw = await readJsonFile(config.systemTemplatesFile, []);
   if (!Array.isArray(raw)) return [];
   const templates = [];
   let changed = false;
   for (const item of raw) {
     try {
-      const template = normalizeTemplate(item, config, item);
+      const template = normalizeTemplate(item, config, item, { keepUpdatedAt: true });
       templates.push(template);
       if (template.html !== item.html || item.schemaVersion !== 1) changed = true;
     } catch (error) {
@@ -56,6 +56,10 @@ async function readTemplates(config) {
   return templates;
 }
 
+async function readTemplates(config) {
+  return withJsonFileLock(config.systemTemplatesFile, () => readTemplatesUnlocked(config));
+}
+
 async function writeTemplates(config, templates) {
   await writeJsonAtomic(config.systemTemplatesFile, templates);
 }
@@ -65,17 +69,19 @@ async function listTemplates(config) {
 }
 
 async function createTemplate(config, body) {
-  const templates = await readTemplates(config);
-  if (templates.length >= config.maxTemplates) {
-    throw createHttpError(409, "TEMPLATE_LIMIT_EXCEEDED", "自定义模板数量已达上限");
-  }
-  const template = normalizeTemplate(body, config, null);
-  if (templates.some((item) => item.id === template.id)) {
-    throw createHttpError(409, "TEMPLATE_EXISTS", "模板 ID 已存在");
-  }
-  templates.push(template);
-  await writeTemplates(config, templates);
-  return template;
+  return withJsonFileLock(config.systemTemplatesFile, async () => {
+    const templates = await readTemplatesUnlocked(config);
+    if (templates.length >= config.maxTemplates) {
+      throw createHttpError(409, "TEMPLATE_LIMIT_EXCEEDED", "自定义模板数量已达上限");
+    }
+    const template = normalizeTemplate(body, config, null);
+    if (templates.some((item) => item.id === template.id)) {
+      throw createHttpError(409, "TEMPLATE_EXISTS", "模板 ID 已存在");
+    }
+    templates.push(template);
+    await writeTemplates(config, templates);
+    return template;
+  });
 }
 
 async function replaceTemplateCollection(config, body) {
@@ -91,28 +97,34 @@ async function replaceTemplateCollection(config, body) {
     }
     ids.add(template.id);
   }
-  await writeTemplates(config, templates);
-  return templates;
+  return withJsonFileLock(config.systemTemplatesFile, async () => {
+    await writeTemplates(config, templates);
+    return templates;
+  });
 }
 
 async function updateTemplate(config, id, body) {
   if (!isSafeId(id)) throw createHttpError(400, "INVALID_TEMPLATE_ID", "模板 ID 不正确");
-  const templates = await readTemplates(config);
-  const index = templates.findIndex((item) => item.id === id);
-  if (index < 0) throw createHttpError(404, "TEMPLATE_NOT_FOUND", "模板不存在");
-  templates[index] = normalizeTemplate({ ...body, id }, config, templates[index]);
-  await writeTemplates(config, templates);
-  return templates[index];
+  return withJsonFileLock(config.systemTemplatesFile, async () => {
+    const templates = await readTemplatesUnlocked(config);
+    const index = templates.findIndex((item) => item.id === id);
+    if (index < 0) throw createHttpError(404, "TEMPLATE_NOT_FOUND", "模板不存在");
+    templates[index] = normalizeTemplate({ ...body, id }, config, templates[index]);
+    await writeTemplates(config, templates);
+    return templates[index];
+  });
 }
 
 async function deleteTemplate(config, id) {
   if (!isSafeId(id)) throw createHttpError(400, "INVALID_TEMPLATE_ID", "模板 ID 不正确");
-  const templates = await readTemplates(config);
-  const next = templates.filter((item) => item.id !== id);
-  if (next.length === templates.length) {
-    throw createHttpError(404, "TEMPLATE_NOT_FOUND", "模板不存在");
-  }
-  await writeTemplates(config, next);
+  await withJsonFileLock(config.systemTemplatesFile, async () => {
+    const templates = await readTemplatesUnlocked(config);
+    const next = templates.filter((item) => item.id !== id);
+    if (next.length === templates.length) {
+      throw createHttpError(404, "TEMPLATE_NOT_FOUND", "模板不存在");
+    }
+    await writeTemplates(config, next);
+  });
 }
 
 module.exports = {

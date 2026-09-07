@@ -100,6 +100,7 @@ const ALLOWED_CSS_PROPERTIES = new Set([
 ]);
 
 const ALLOWED_DISPLAY_VALUES = new Set(["block", "inline", "inline-block", "none"]);
+const ALLOWED_REL_TOKENS = new Set(["nofollow", "noopener", "noreferrer", "sponsored", "ugc"]);
 const VOID_TAGS = new Set(["img", "br"]);
 
 function createReport() {
@@ -117,14 +118,20 @@ function byteLength(value) {
 }
 
 function decodeHtmlEntities(value) {
+  const decodeCodePoint = (code, radix) => {
+    const number = Number.parseInt(code, radix);
+    if (!Number.isInteger(number) || number < 0 || number > 0x10ffff) return "\uFFFD";
+    if (number >= 0xd800 && number <= 0xdfff) return "\uFFFD";
+    return String.fromCodePoint(number);
+  };
   return String(value || "")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
-    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)))
-    .replace(/&#([0-9]+);/g, (_, code) => String.fromCodePoint(Number.parseInt(code, 10)));
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => decodeCodePoint(code, 16))
+    .replace(/&#([0-9]+);/g, (_, code) => decodeCodePoint(code, 10));
 }
 
 function escapeAttribute(value) {
@@ -175,7 +182,7 @@ function sanitizeCssValue(property, value) {
   const raw = stripControl(decodeHtmlEntities(value));
   const lower = raw.toLowerCase();
   if (!raw || lower.includes("!important")) return "";
-  if (/(url\s*\(|@import|expression\s*\(|behavior\s*:)/i.test(raw)) return "";
+  if (/[\\]|\/\*/.test(raw) || /(url\s*\(|@import|expression\s*\(|behavior\s*:)/i.test(raw)) return "";
   if (/(position|z-index|transform|animation|transition|filter|backdrop-filter|grid|flex|gap|content|cursor|pointer-events|clip-path|mask)/i.test(property)) {
     return "";
   }
@@ -274,7 +281,8 @@ function sanitizeAttributes(tag, rawAttributes, report, options = {}) {
     if (name === "rel") {
       relValue = value
         .split(/\s+/)
-        .filter((token) => /^[a-z0-9_-]+$/i.test(token))
+        .map((token) => token.toLowerCase())
+        .filter((token) => ALLOWED_REL_TOKENS.has(token))
         .join(" ");
       if (!relValue) {
         report.removedAttributes += 1;

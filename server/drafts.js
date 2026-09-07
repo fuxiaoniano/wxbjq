@@ -10,6 +10,7 @@ const {
   listJsonFiles,
   readJsonFile,
   safeJsonFile,
+  withJsonFileLock,
   writeJsonAtomic,
 } = require("./storage");
 const { createHttpError } = require("./security");
@@ -90,7 +91,11 @@ async function countDrafts(config) {
   return (await listJsonFiles(config.draftsDir)).length;
 }
 
-async function readDraftById(config, id, migrate = true) {
+function withDraftCollectionLock(config, callback) {
+  return withJsonFileLock(path.join(config.draftsDir, ".drafts.lock"), callback);
+}
+
+async function readDraftByIdUnlocked(config, id, migrate = true) {
   const filePath = safeJsonFile(config.draftsDir, id);
   if (!filePath) throw createHttpError(400, "INVALID_DRAFT_ID", "草稿 ID 不正确");
   if (!(await fileExists(filePath))) throw createHttpError(404, "DRAFT_NOT_FOUND", "草稿不存在");
@@ -109,19 +114,27 @@ async function readDraftById(config, id, migrate = true) {
   return draft;
 }
 
+async function readDraftById(config, id, migrate = true) {
+  if (!migrate) return readDraftByIdUnlocked(config, id, false);
+  return withDraftCollectionLock(config, () => readDraftByIdUnlocked(config, id, true));
+}
+
 async function listDrafts(config, query = {}) {
   const page = Math.max(Number.parseInt(query.page || "1", 10) || 1, 1);
   const pageSize = Math.min(Math.max(Number.parseInt(query.pageSize || "20", 10) || 20, 1), 100);
-  const files = await listJsonFiles(config.draftsDir);
-  const drafts = [];
-  for (const file of files) {
-    const id = path.basename(file, ".json");
-    try {
-      drafts.push(summarizeDraft(await readDraftById(config, id)));
-    } catch (error) {
-      console.error(`[drafts] skipped ${file}: ${error.code || "ERR"}`);
+  const drafts = await withDraftCollectionLock(config, async () => {
+    const files = await listJsonFiles(config.draftsDir);
+    const rows = [];
+    for (const file of files) {
+      const id = path.basename(file, ".json");
+      try {
+        rows.push(summarizeDraft(await readDraftByIdUnlocked(config, id)));
+      } catch (error) {
+        console.error(`[drafts] skipped ${file}: ${error.code || "ERR"}`);
+      }
     }
-  }
+    return rows;
+  });
   drafts.sort((a, b) => new Date(b.updatedAt || b.savedAt) - new Date(a.updatedAt || a.savedAt));
   const start = (page - 1) * pageSize;
   return {
@@ -133,41 +146,47 @@ async function listDrafts(config, query = {}) {
 }
 
 async function createDraft(config, body) {
-  if ((await countDrafts(config)) >= config.maxDrafts) {
-    throw createHttpError(409, "DRAFT_LIMIT_EXCEEDED", "服务器草稿数量已达上限");
-  }
-  const draft = normalizeDraft(body, config, null);
-  const filePath = safeJsonFile(config.draftsDir, draft.id);
-  if (!filePath) throw createHttpError(400, "INVALID_DRAFT_ID", "草稿 ID 不正确");
-  if (await fileExists(filePath)) {
-    throw createHttpError(409, "DRAFT_EXISTS", "草稿 ID 已存在");
-  }
-  await writeJsonAtomic(filePath, draft);
-  return summarizeDraft(draft);
+  return withDraftCollectionLock(config, async () => {
+    if ((await countDrafts(config)) >= config.maxDrafts) {
+      throw createHttpError(409, "DRAFT_LIMIT_EXCEEDED", "服务器草稿数量已达上限");
+    }
+    const draft = normalizeDraft(body, config, null);
+    const filePath = safeJsonFile(config.draftsDir, draft.id);
+    if (!filePath) throw createHttpError(400, "INVALID_DRAFT_ID", "草稿 ID 不正确");
+    if (await fileExists(filePath)) {
+      throw createHttpError(409, "DRAFT_EXISTS", "草稿 ID 已存在");
+    }
+    await writeJsonAtomic(filePath, draft);
+    return summarizeDraft(draft);
+  });
 }
 
 async function updateDraft(config, id, body) {
-  const filePath = safeJsonFile(config.draftsDir, id);
-  if (!filePath) throw createHttpError(400, "INVALID_DRAFT_ID", "草稿 ID 不正确");
-  const existing = (await fileExists(filePath)) ? await readDraftById(config, id) : null;
-  if (!existing && (await countDrafts(config)) >= config.maxDrafts) {
-    throw createHttpError(409, "DRAFT_LIMIT_EXCEEDED", "服务器草稿数量已达上限");
-  }
-  const draft = normalizeDraft({ ...body, id }, config, existing);
-  await writeJsonAtomic(filePath, draft);
-  return summarizeDraft(draft);
+  return withDraftCollectionLock(config, async () => {
+    const filePath = safeJsonFile(config.draftsDir, id);
+    if (!filePath) throw createHttpError(400, "INVALID_DRAFT_ID", "草稿 ID 不正确");
+    const existing = (await fileExists(filePath)) ? await readDraftByIdUnlocked(config, id) : null;
+    if (!existing && (await countDrafts(config)) >= config.maxDrafts) {
+      throw createHttpError(409, "DRAFT_LIMIT_EXCEEDED", "服务器草稿数量已达上限");
+    }
+    const draft = normalizeDraft({ ...body, id }, config, existing);
+    await writeJsonAtomic(filePath, draft);
+    return summarizeDraft(draft);
+  });
 }
 
 async function deleteDraft(config, id) {
-  const filePath = safeJsonFile(config.draftsDir, id);
-  if (!filePath) throw createHttpError(400, "INVALID_DRAFT_ID", "草稿 ID 不正确");
-  try {
-    await fs.promises.copyFile(filePath, `${filePath}.bak`);
-    await fs.promises.unlink(filePath);
-  } catch (error) {
-    if (error.code === "ENOENT") return;
-    throw createHttpError(500, "DRAFT_DELETE_FAILED", "草稿删除失败");
-  }
+  await withDraftCollectionLock(config, async () => {
+    const filePath = safeJsonFile(config.draftsDir, id);
+    if (!filePath) throw createHttpError(400, "INVALID_DRAFT_ID", "草稿 ID 不正确");
+    try {
+      await fs.promises.copyFile(filePath, `${filePath}.bak`);
+      await fs.promises.unlink(filePath);
+    } catch (error) {
+      if (error.code === "ENOENT") return;
+      throw createHttpError(500, "DRAFT_DELETE_FAILED", "草稿删除失败");
+    }
+  });
 }
 
 module.exports = {
