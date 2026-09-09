@@ -29,6 +29,14 @@ function createDraftTitle(html) {
   return `未命名草稿 ${new Date().toLocaleString("zh-CN")}`;
 }
 
+function normalizeDraftMetadata(input = {}, existing = {}) {
+  return {
+    title: String(input?.title || existing?.title || "").trim().slice(0, 80),
+    author: String(input?.author ?? existing?.author ?? "").trim().slice(0, 16),
+    digest: String(input?.digest ?? existing?.digest ?? "").trim().slice(0, 128),
+  };
+}
+
 function normalizeDraft(input, config, existing = null, options = {}) {
   const now = new Date().toISOString();
   const rawHtml = String(input?.html || "");
@@ -47,27 +55,31 @@ function normalizeDraft(input, config, existing = null, options = {}) {
 
   const createdAt = existing?.createdAt || input?.createdAt || input?.savedAt || now;
   const updatedAt = options.keepUpdatedAt ? input?.updatedAt || input?.savedAt || now : now;
-  const title = String(input?.title || existing?.title || createDraftTitle(html)).trim().slice(0, 80);
+  const metadata = normalizeDraftMetadata(input, existing);
   const merged = {
-    ...(existing && typeof existing === "object" ? existing : {}),
-    ...(input && typeof input === "object" ? input : {}),
     id,
-    title: title || "未命名草稿",
+    title: metadata.title || createDraftTitle(html) || "未命名草稿",
+    author: metadata.author,
+    digest: metadata.digest,
     html,
     createdAt,
     updatedAt,
     savedAt: updatedAt,
     wordCount: countWords(html),
     bytes: byteLength(html),
-    schemaVersion: 1,
+    schemaVersion: 2,
   };
+  const migratedAt = input?.migratedAt || existing?.migratedAt;
+  if (migratedAt) merged.migratedAt = migratedAt;
   return merged;
 }
 
 function needsMigration(draft) {
   return (
     !draft ||
-    draft.schemaVersion !== 1 ||
+    draft.schemaVersion !== 2 ||
+    typeof draft.author !== "string" ||
+    typeof draft.digest !== "string" ||
     !draft.createdAt ||
     !draft.updatedAt ||
     typeof draft.wordCount !== "number" ||
@@ -79,6 +91,8 @@ function summarizeDraft(draft) {
   return {
     id: draft.id,
     title: draft.title || "未命名草稿",
+    author: draft.author || "",
+    digest: draft.digest || "",
     createdAt: draft.createdAt || draft.savedAt || "",
     updatedAt: draft.updatedAt || draft.savedAt || "",
     savedAt: draft.savedAt || draft.updatedAt || "",

@@ -22,11 +22,12 @@ function safeUrl(value, image = false) {
   const text = String(value || "").trim();
   if (!text) return "";
   if (image && /^data:image\/(png|jpeg|gif);base64,/i.test(text)) return text;
+  const normalized = image && text.startsWith("//") ? `https:${text}` : text;
   try {
-    const url = new URL(text);
+    const url = new URL(normalized);
     return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password ? url.toString() : "";
   } catch (error) {
-    return image && text.startsWith("/") ? text : "";
+    return image && text.startsWith("/") && !text.startsWith("//") ? text : "";
   }
 }
 
@@ -140,10 +141,23 @@ async function convertWechatContent(html, options = {}) {
     throw createHttpError(413, "DRAFT_CONTENT_TOO_LARGE", `正文不能超过 ${options.maxCharacters} 个字符`);
   }
   if (options.uploadImage) {
-    for (const image of images) {
+    for (let index = 0; index < images.length; index += 1) {
+      const image = images[index];
       const src = getAttr(image, "src");
       if (!src) continue;
-      const uploadedUrl = await options.uploadImage(src);
+      let uploadedUrl;
+      try {
+        uploadedUrl = await options.uploadImage(src);
+      } catch (error) {
+        if (String(error?.code || "").startsWith("IMAGE_")) {
+          throw createHttpError(
+            error.statusCode || 422,
+            error.code,
+            `正文第 ${index + 1} 张图片处理失败：${error.publicMessage || "无法读取图片"}`,
+          );
+        }
+        throw error;
+      }
       setAttr(image, "src", uploadedUrl);
       report.uploadedImages += uploadedUrl === src ? 0 : 1;
     }

@@ -108,7 +108,8 @@ function normalizeTemplate(template) {
 }
 
 function loadLocalTemplates() {
-  const templates = Array.isArray(readLocalJson(LOCAL_TEMPLATES_KEY, [])) ? readLocalJson(LOCAL_TEMPLATES_KEY, []) : [];
+  const stored = readLocalJson(LOCAL_TEMPLATES_KEY, []);
+  const templates = Array.isArray(stored) ? stored : [];
   return templates.map((template) => normalizeTemplate({ ...template, custom: true })).filter(Boolean);
 }
 

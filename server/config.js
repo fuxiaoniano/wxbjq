@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const dotenv = require("dotenv");
 
-const VERSION = "2.2.0";
+const VERSION = "2.2.3";
 
 function parseBoolean(value, fallback) {
   if (value === undefined || value === null || value === "") return fallback;

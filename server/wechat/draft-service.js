@@ -161,7 +161,21 @@ function createWechatDraftService(config) {
         maxCharacters: config.wechat.draftTextMaxCharacters,
         uploadImage: (source) => images.uploadContentImage(account, source),
       });
-      const coverMediaId = input.coverMediaId || await images.uploadCover(account, input.coverImage);
+      let coverMediaId = input.coverMediaId;
+      if (!coverMediaId) {
+        try {
+          coverMediaId = await images.uploadCover(account, input.coverImage);
+        } catch (error) {
+          if (String(error?.code || "").startsWith("IMAGE_")) {
+            throw createHttpError(
+              error.statusCode || 422,
+              error.code,
+              `封面图片处理失败：${error.publicMessage || "无法读取图片"}。也可以上传封面文件或填写微信封面素材 ID。`,
+            );
+          }
+          throw error;
+        }
+      }
       const article = {
         article_type: "news",
         title: input.title,

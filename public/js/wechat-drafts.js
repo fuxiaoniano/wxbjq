@@ -1,7 +1,7 @@
 import { apiJson } from "./api.js";
 import { getCurrentUser } from "./auth.js";
 import { requireFeature } from "./entitlements.js";
-import { closeModal, htmlToPlainText, openModal, qs, readFileAsDataUrl, showToast } from "./utils.js";
+import { closeModal, debounce, htmlToPlainText, openModal, qs, readFileAsDataUrl, showToast } from "./utils.js";
 
 function accountCard(account) {
   const label = document.createElement("label");
@@ -81,6 +81,22 @@ export function initWechatDraftUI(authController, editorController, draftManager
     return htmlToPlainText(editorController.getHtml()).replace(/\s+/g, " ").trim().slice(0, 32);
   }
 
+  function formMetadata() {
+    return {
+      title: ui.form.elements.title.value,
+      author: ui.form.elements.author.value,
+      digest: ui.form.elements.digest.value,
+    };
+  }
+
+  async function persistFormMetadata() {
+    return draftManager.persistCurrentMetadata?.(formMetadata());
+  }
+
+  const scheduleMetadataSave = debounce(() => {
+    persistFormMetadata().catch((error) => showToast(error.message || "草稿信息保存失败", "保存失败"));
+  }, 350);
+
   function payload() {
     const form = ui.form;
     return {
@@ -104,6 +120,7 @@ export function initWechatDraftUI(authController, editorController, draftManager
   }
 
   async function preview() {
+    await persistFormMetadata();
     await readCoverFile();
     feedback("正在检查文章内容...");
     ui.previewButton.disabled = true;
@@ -112,7 +129,7 @@ export function initWechatDraftUI(authController, editorController, draftManager
       ui.preview.hidden = false;
       ui.previewBody.innerHTML = result.content;
       ui.checkStatus.textContent = `${result.report.images} 张正文图片`;
-      feedback("检查通过。提交时会把正文图片和封面上传到所选公众号。", false);
+      feedback("检查通过。微信后台图片将直接复用；其他正文图片和封面将在提交时处理。", false);
       return result;
     } catch (error) {
       ui.preview.hidden = true;
@@ -138,6 +155,7 @@ export function initWechatDraftUI(authController, editorController, draftManager
     ui.previewButton.disabled = true;
     feedback("正在处理图片并保存到微信公众号草稿箱，请不要重复点击...");
     try {
+      await persistFormMetadata();
       await readCoverFile();
       if (!idempotencyKey) idempotencyKey = createIdempotencyKey();
       const result = await apiJson("/wechat/drafts", {
@@ -175,7 +193,11 @@ export function initWechatDraftUI(authController, editorController, draftManager
     idempotencyKey = "";
     articleVersion = draftManager.currentDraftId || `editor-${Date.now()}`;
     ui.form.reset();
-    ui.form.elements.title.value = currentTitle();
+    const metadata = draftManager.getCurrentMetadata?.() || {};
+    ui.form.elements.title.value = metadata.title || currentTitle();
+    ui.form.elements.author.value = metadata.author || "";
+    ui.form.elements.digest.value = metadata.digest || "";
+    draftManager.updateCurrentMetadata?.(formMetadata());
     const firstImage = qs("#editor")?.querySelector("img[src]")?.getAttribute("src") || "";
     if (firstImage) ui.form.elements.coverImage.value = firstImage;
     openModal(ui.modal);
@@ -195,6 +217,11 @@ export function initWechatDraftUI(authController, editorController, draftManager
   ui.close.addEventListener("click", () => closeModal(ui.modal));
   ui.modal.addEventListener("click", (event) => { if (event.target === ui.modal) closeModal(ui.modal); });
   ui.previewButton.addEventListener("click", () => preview().catch(() => {}));
+  ui.form.addEventListener("input", (event) => {
+    if (!["title", "author", "digest"].includes(event.target?.name)) return;
+    draftManager.updateCurrentMetadata?.(formMetadata());
+    scheduleMetadataSave();
+  });
   ui.form.addEventListener("submit", submit);
   return { open };
 }

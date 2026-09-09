@@ -9,7 +9,6 @@ const test = require("node:test");
 const { createAppServer, loadConfig } = require("../server");
 const { ensureDataStore, readJsonFile, writeJsonAtomic } = require("../server/storage");
 const { sanitizeStoredHtml } = require("../server/sanitizer");
-const { inspectWechatCompatibility, normalizeWechatHtml } = require("../server/compatibility");
 
 const rootDir = path.resolve(__dirname, "..");
 
@@ -307,7 +306,7 @@ test("draft CRUD, pagination, migration, limits and atomic backups", async () =>
     const created = await app.json("/api/drafts", {
       method: "POST",
       headers: writeHeaders(app.origin),
-      body: JSON.stringify({ title: "第一篇", html: '<p style="color:#333">内容</p>' }),
+      body: JSON.stringify({ title: "第一篇", author: "作者甲", digest: "草稿摘要", html: '<p style="color:#333">内容</p>', unexpected: "drop-me" }),
     });
     assert.equal(created.response.status, 201);
     const id = created.payload.id;
@@ -315,6 +314,9 @@ test("draft CRUD, pagination, migration, limits and atomic backups", async () =>
     const detail = await app.json(`/api/drafts/${id}`);
     assert.equal(detail.response.status, 200);
     assert.equal(detail.payload.title, "第一篇");
+    assert.equal(detail.payload.author, "作者甲");
+    assert.equal(detail.payload.digest, "草稿摘要");
+    assert.equal("unexpected" in detail.payload, false);
     assert.equal(detail.payload.wordCount, 2);
 
     const updated = await app.json(`/api/drafts/${id}`, {
@@ -345,7 +347,9 @@ test("draft CRUD, pagination, migration, limits and atomic backups", async () =>
     fs.writeFileSync(oldPath, JSON.stringify({ id: "legacy", title: "旧草稿", html: "<p>旧</p>", savedAt: "2026-01-01T00:00:00.000Z" }), "utf8");
     const migrated = await app.json("/api/drafts/legacy");
     assert.equal(migrated.response.status, 200);
-    assert.equal(migrated.payload.schemaVersion, 1);
+    assert.equal(migrated.payload.schemaVersion, 2);
+    assert.equal(migrated.payload.author, "");
+    assert.equal(migrated.payload.digest, "");
     assert.ok(fs.existsSync(`${oldPath}.bak`));
 
     assert.equal((await app.request("/api/drafts/bad..id")).status, 404);
@@ -361,9 +365,10 @@ test("template CRUD sanitizes html and enforces limits", async () => {
     const created = await app.json("/api/system-templates", {
       method: "POST",
       headers: writeHeaders(app.origin),
-      body: JSON.stringify({ name: "模板", category: "分类", html: '<section><p onclick="x()">正文</p><script>alert(1)</script></section>' }),
+      body: JSON.stringify({ name: "模板", category: "分类", html: '<section><p onclick="x()">正文</p><script>alert(1)</script></section>', unexpected: "drop-me" }),
     });
     assert.equal(created.response.status, 201);
+    assert.equal("unexpected" in created.payload, false);
     assert.ok(!created.payload.html.includes("script"));
     assert.ok(!created.payload.html.includes("onclick"));
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -570,19 +575,4 @@ test("atomic JSON writes preserve a valid backup when the primary file is corrup
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
-});
-
-test("wechat compatibility detects and normalizes unsupported html without losing text", () => {
-  const html = '<section id="x" class="c" data-editor="1" style="display:grid;gap:10px;position:absolute;--x:red;width:120%"><p>正文文本</p><img src="https://example.com/a.png" style="width:1200px"></section>';
-  const report = inspectWechatCompatibility(html);
-  assert.ok(report.warningCount >= 5);
-  const normalized = normalizeWechatHtml(html);
-  assert.ok(normalized.includes("正文文本"));
-  assert.ok(!normalized.includes("display:grid"));
-  assert.ok(!normalized.includes("gap"));
-  assert.ok(!normalized.includes("position"));
-  assert.ok(!normalized.includes("class="));
-  assert.ok(!normalized.includes("id="));
-  assert.ok(!normalized.includes("data-editor"));
-  assert.ok(normalized.includes("max-width: 100%"));
 });

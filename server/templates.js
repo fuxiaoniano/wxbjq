@@ -23,8 +23,6 @@ function normalizeTemplate(input, config, existing = null, options = {}) {
   if (!isSafeId(id)) throw createHttpError(400, "INVALID_TEMPLATE_ID", "模板 ID 不正确");
   const now = new Date().toISOString();
   return {
-    ...(existing && typeof existing === "object" ? existing : {}),
-    ...(input && typeof input === "object" ? input : {}),
     id,
     name: String(input?.name || existing?.name || "未命名模板").trim().slice(0, 80) || "未命名模板",
     category: String(input?.category || existing?.category || "自定义模板").trim().slice(0, 80) || "自定义模板",

@@ -6,7 +6,15 @@ const test = require("node:test");
 const { convertWechatContent } = require("../server/wechat/content-converter");
 const { readResponseText } = require("../server/wechat/client");
 const { getWechatDraftService } = require("../server/wechat/draft-service");
-const { downloadImage, isPrivateAddress, validateImage } = require("../server/wechat/image-service");
+const {
+  createPinnedLookup,
+  downloadImage,
+  imageRequestHeaders,
+  isPrivateAddress,
+  isTrustedWechatImage,
+  normalizeWechatImageUrl,
+  validateImage,
+} = require("../server/wechat/image-service");
 const { WechatApiError } = require("../server/wechat/errors");
 const { getMembershipService } = require("../server/membership/service");
 const { createTestApp, tokenFromMessage } = require("./app-helper");
@@ -110,6 +118,24 @@ test("HTML conversion validates content before uploads and normalizes link relat
   assert.match(converted.content, /noreferrer/);
 });
 
+test("WeChat CDN image links are normalized and can be reused safely", async () => {
+  const normalized = normalizeWechatImageUrl(
+    "//mmbiz.qpic.cn/sz_mmbiz_png/example/0?wx_fmt=png#preview",
+  );
+  assert.equal(normalized, "https://mmbiz.qpic.cn/sz_mmbiz_png/example/0?wx_fmt=png");
+  assert.equal(isTrustedWechatImage("http://mmbiz.qlogo.cn/example/avatar/0"), true);
+  assert.equal(isTrustedWechatImage("https://mmbiz.qpic.cn.evil.example/image.png"), false);
+  assert.equal(normalizeWechatImageUrl("https://mmbiz.qpic.cn:444/image.png"), "");
+
+  const headers = imageRequestHeaders(new URL(normalized));
+  assert.equal(headers.Referer, "https://mp.weixin.qq.com/");
+
+  const converted = await convertWechatContent(
+    '<p>正文<img src="//mmbiz.qpic.cn/example/image/0?wx_fmt=jpeg"></p>',
+  );
+  assert.match(converted.content, /src="https:\/\/mmbiz\.qpic\.cn\/example\/image\/0\?wx_fmt=jpeg"/);
+});
+
 test("WeChat response reading stops at the configured byte limit", async () => {
   const response = new Response("x".repeat(128));
   await assert.rejects(
@@ -132,6 +158,19 @@ test("image fetch protection rejects private and metadata destinations", async (
   oversizedPixels.writeUInt32BE(100000, 16);
   oversizedPixels.writeUInt32BE(100000, 20);
   assert.throws(() => validateImage(oversizedPixels, 1024, { maxPixels: 40_000_000 }), (error) => error.code === "IMAGE_DIMENSIONS_INVALID");
+});
+
+test("pinned DNS lookup supports Node address and all-address callback modes", () => {
+  const lookup = createPinnedLookup({ address: "8.8.8.8", family: 4 });
+  lookup("example.com", {}, (error, address, family) => {
+    assert.equal(error, null);
+    assert.equal(address, "8.8.8.8");
+    assert.equal(family, 4);
+  });
+  lookup("example.com", { all: true }, (error, addresses) => {
+    assert.equal(error, null);
+    assert.deepEqual(addresses, [{ address: "8.8.8.8", family: 4 }]);
+  });
 });
 
 test("draft creation is tenant-safe, idempotent, quota-aware, and sanitizes WeChat payloads", async () => {

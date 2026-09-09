@@ -2,13 +2,13 @@ import { appConfig, withBasePath } from "./config.js";
 import { initAuthUI } from "./auth.js";
 import { bindBackupTools } from "./backup.js";
 import { bindCopyReport, beginCopyArticle } from "./clipboard.js?v=2.2.0";
-import { createAutosave, maybeShowRecovery } from "./autosave.js";
-import { createDraftManager } from "./drafts.js";
+import { createAutosave, maybeShowRecovery } from "./autosave.js?v=2.2.3";
+import { createDraftManager } from "./drafts.js?v=2.2.3";
 import { createEditorController } from "./editor.js";
 import { bindImageTools } from "./images.js";
 import { initMembershipUI } from "./membership.js";
 import { initWechatAccountsUI } from "./wechat-accounts.js";
-import { initWechatDraftUI } from "./wechat-drafts.js";
+import { initWechatDraftUI } from "./wechat-drafts.js?v=2.2.3";
 import { initSelection } from "./selection.js";
 import { analyzeArticle, renderArticleStats } from "./statistics.js";
 import { createTemplateManager } from "./templates.js";
@@ -111,7 +111,10 @@ const authController = initAuthUI();
 initMembershipUI(authController);
 initWechatAccountsUI(authController);
 initWechatDraftUI(authController, editorController, draftManager);
-autosave = createAutosave(editorController, () => draftManager.currentDraftId);
+autosave = createAutosave(editorController, () => ({
+  draftId: draftManager.currentDraftId,
+  ...draftManager.getCurrentMetadata(),
+}));
 
 bindToolbar(elements, editorController);
 bindCopyReport(elements);
@@ -166,7 +169,12 @@ editorController.setHtml("", { silent: true });
 renderArticleStats(elements.articleStats, analyzeArticle(""));
 templateManager.init().catch((error) => showToast(error.message || "模板读取失败", "模板读取失败"));
 maybeShowRecovery(elements, editorController, (record) => {
-  draftManager.setCurrentDraft({ id: record.draftId || "", title: "恢复的未保存内容" });
+  draftManager.setCurrentDraft({
+    id: record.draftId || "",
+    title: record.title || "恢复的未保存内容",
+    author: record.author || "",
+    digest: record.digest || "",
+  });
 });
 
 if (!appConfig.serverStorageEnabled) {

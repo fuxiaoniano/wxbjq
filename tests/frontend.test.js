@@ -86,6 +86,14 @@ test("administrator tools use a standalone page and WeChat credentials stay out 
   assert.ok(!wechat.includes("accessToken"));
 });
 
+test("WeChat draft modal keeps its form scrollable on short and mobile viewports", () => {
+  const css = fs.readFileSync(path.join(rootDir, "public", "styles.css"), "utf8");
+  assert.match(css, /\.wechat-draft-modal\s*{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\)/s);
+  assert.match(css, /\.wechat-draft-content\s*{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/s);
+  assert.match(css, /max-height:\s*calc\(100dvh - 20px - env\(safe-area-inset-top\) - env\(safe-area-inset-bottom\)\)/);
+  assert.match(css, /\.wechat-draft-actions\s*{[^}]*position:\s*sticky/s);
+});
+
 test("base path helpers generate prefixed app and api URLs", async () => {
   installMinimalBrowserGlobals({
     "app-base-path": "/wechat-editor/",
@@ -163,6 +171,32 @@ test("WeChat idempotency keys work in browsers without randomUUID", async () => 
       },
     }),
     `draft-${"ab".repeat(16)}`,
+  );
+});
+
+test("browser draft metadata preserves WeChat title, author and digest limits", async () => {
+  installMinimalBrowserGlobals();
+  const fixture = createFrontendFixture();
+  const { normalizeDraftMetadata } = await fixture.importModule("drafts.js");
+
+  assert.deepEqual(
+    normalizeDraftMetadata({ title: ` ${"题".repeat(90)} `, author: ` ${"作".repeat(20)} `, digest: ` ${"摘".repeat(140)} ` }),
+    { title: "题".repeat(80), author: "作".repeat(16), digest: "摘".repeat(128) },
+  );
+});
+
+test("autosave recovery keeps the selected draft metadata", async () => {
+  installMinimalBrowserGlobals();
+  const fixture = createFrontendFixture();
+  const { normalizeRecoveryContext } = await fixture.importModule("autosave.js");
+
+  assert.deepEqual(
+    normalizeRecoveryContext({ draftId: "draft-1", title: " 标题 ", author: " 作者 ", digest: " 摘要 " }),
+    { draftId: "draft-1", title: "标题", author: "作者", digest: "摘要" },
+  );
+  assert.deepEqual(
+    normalizeRecoveryContext("legacy-draft"),
+    { draftId: "legacy-draft", title: "", author: "", digest: "" },
   );
 });
 

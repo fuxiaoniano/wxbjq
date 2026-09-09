@@ -11,6 +11,40 @@ const { createHttpError } = require("../security");
 
 const TRUSTED_WECHAT_IMAGE_HOSTS = new Set(["mmbiz.qpic.cn", "mmbiz.qlogo.cn"]);
 
+function normalizeWechatImageUrl(source) {
+  const text = String(source || "").trim();
+  if (!text) return "";
+  let url;
+  try {
+    url = new URL(text.startsWith("//") ? `https:${text}` : text);
+  } catch (error) {
+    return "";
+  }
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.port ||
+    !TRUSTED_WECHAT_IMAGE_HOSTS.has(url.hostname.toLowerCase())
+  ) {
+    return "";
+  }
+  url.protocol = "https:";
+  url.hash = "";
+  return url.toString();
+}
+
+function imageRequestHeaders(url) {
+  const headers = {
+    Accept: "image/png,image/jpeg,image/gif",
+    "User-Agent": "Mozilla/5.0 (compatible; WechatEditorImageFetcher/1.0)",
+  };
+  if (TRUSTED_WECHAT_IMAGE_HOSTS.has(url.hostname.toLowerCase())) {
+    headers.Referer = "https://mp.weixin.qq.com/";
+  }
+  return headers;
+}
+
 function isPrivateAddress(address) {
   const value = String(address || "").toLowerCase().split("%")[0];
   if (net.isIPv4(value)) {
@@ -80,12 +114,23 @@ async function resolvePublicAddress(hostname) {
   if (!addresses.length || addresses.some((item) => isPrivateAddress(item.address))) {
     throw createHttpError(422, "IMAGE_URL_BLOCKED", "图片地址指向了不允许访问的网络");
   }
-  return addresses[0];
+  return addresses.find((item) => item.family === 4) || addresses[0];
+}
+
+function createPinnedLookup(address) {
+  const resolved = { address: address.address, family: Number(address.family) };
+  return function lookup(hostname, options, callback) {
+    if (options?.all) {
+      callback(null, [resolved]);
+      return;
+    }
+    callback(null, resolved.address, resolved.family);
+  };
 }
 
 async function downloadImage(source, config, maxBytes, redirectsLeft = config.wechat.imageRedirectLimit) {
   let url;
-  try { url = new URL(source); } catch (error) {
+  try { url = new URL(normalizeWechatImageUrl(source) || source); } catch (error) {
     throw createHttpError(422, "INVALID_IMAGE_URL", "图片地址格式不正确");
   }
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
@@ -99,8 +144,8 @@ async function downloadImage(source, config, maxBytes, redirectsLeft = config.we
   return new Promise((resolve, reject) => {
     let settled = false;
     const request = client.get(url, {
-      headers: { Accept: "image/png,image/jpeg,image/gif", "User-Agent": "WechatEditorImageFetcher/1.0" },
-      lookup(hostname, options, callback) { callback(null, address.address, address.family); },
+      headers: imageRequestHeaders(url),
+      lookup: createPinnedLookup(address),
       servername: url.hostname,
     }, (response) => {
       if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
@@ -158,10 +203,7 @@ async function downloadImage(source, config, maxBytes, redirectsLeft = config.we
 }
 
 function isTrustedWechatImage(source) {
-  try {
-    const url = new URL(source);
-    return url.protocol === "https:" && TRUSTED_WECHAT_IMAGE_HOSTS.has(url.hostname.toLowerCase());
-  } catch (error) { return false; }
+  return Boolean(normalizeWechatImageUrl(source));
 }
 
 function createWechatImageService(config, repository, client, tokenService) {
@@ -173,7 +215,8 @@ function createWechatImageService(config, repository, client, tokenService) {
   }
 
   async function uploadContentImage(account, source) {
-    if (isTrustedWechatImage(source)) return source;
+    const trustedWechatUrl = normalizeWechatImageUrl(source);
+    if (trustedWechatUrl) return trustedWechatUrl;
     const image = await readSource(source, config.wechat.imageMaxBytes, { contentImage: true });
     const cached = await repository.imageCache.findOne(
       (row) => row.userId === account.userId && row.accountId === account.id && row.kind === "content" && row.hash === image.hash,
@@ -210,4 +253,15 @@ function createWechatImageService(config, repository, client, tokenService) {
   return { isTrustedWechatImage, readSource, uploadContentImage, uploadCover };
 }
 
-module.exports = { createWechatImageService, detectImage, downloadImage, isPrivateAddress, isTrustedWechatImage, parseDataImage, validateImage };
+module.exports = {
+  createPinnedLookup,
+  createWechatImageService,
+  detectImage,
+  downloadImage,
+  imageRequestHeaders,
+  isPrivateAddress,
+  isTrustedWechatImage,
+  normalizeWechatImageUrl,
+  parseDataImage,
+  validateImage,
+};

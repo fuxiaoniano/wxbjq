@@ -20,6 +20,14 @@ const LOCAL_DRAFTS_KEY = "wechat-editor-drafts";
 const LEGACY_DRAFT_KEY = "wechat-editor-draft";
 const MAX_LOCAL_DRAFTS = 80;
 
+export function normalizeDraftMetadata(draft = {}) {
+  return {
+    title: String(draft.title || "").trim().slice(0, 80),
+    author: String(draft.author || "").trim().slice(0, 16),
+    digest: String(draft.digest || "").trim().slice(0, 128),
+  };
+}
+
 function shouldFallbackFromCollectionRequest(error) {
   return error?.code === "SERVER_STORAGE_DISABLED" || error?.status === 404 || (!error?.status && error instanceof TypeError);
 }
@@ -34,34 +42,38 @@ function normalizeDraft(draft) {
   const html = sanitizeEditorHtml(draft.html);
   const stats = analyzeArticle(html);
   const now = new Date().toISOString();
+  const metadata = normalizeDraftMetadata(draft);
   return {
-    ...draft,
     id: String(draft.id || createId("draft")).replace(/[^\w-]/g, "") || createId("draft"),
-    title: String(draft.title || createTitle(html)).trim().slice(0, 80) || "未命名草稿",
+    title: metadata.title || createTitle(html),
+    author: metadata.author,
+    digest: metadata.digest,
     html,
     createdAt: draft.createdAt || draft.savedAt || now,
     updatedAt: draft.updatedAt || draft.savedAt || now,
     savedAt: draft.savedAt || draft.updatedAt || now,
     wordCount: stats.characters,
     bytes: stats.htmlBytes,
-    schemaVersion: 1,
+    schemaVersion: 2,
   };
 }
 
 function summarizeDraft(draft) {
+  const stats = draft.wordCount && draft.bytes ? null : analyzeArticle(draft.html);
   return {
     id: draft.id,
     title: draft.title,
     createdAt: draft.createdAt,
     updatedAt: draft.updatedAt,
     savedAt: draft.savedAt,
-    wordCount: draft.wordCount || analyzeArticle(draft.html).characters,
-    bytes: draft.bytes || analyzeArticle(draft.html).htmlBytes,
+    wordCount: draft.wordCount || stats.characters,
+    bytes: draft.bytes || stats.htmlBytes,
   };
 }
 
 function loadLocalDrafts() {
-  const drafts = Array.isArray(readLocalJson(LOCAL_DRAFTS_KEY, [])) ? readLocalJson(LOCAL_DRAFTS_KEY, []) : [];
+  const stored = readLocalJson(LOCAL_DRAFTS_KEY, []);
+  const drafts = Array.isArray(stored) ? stored : [];
   const normalized = drafts.map(normalizeDraft).filter(Boolean);
   const legacy = normalizeDraft(readLocalJson(LEGACY_DRAFT_KEY, null));
   if (legacy && !normalized.some((draft) => draft.html === legacy.html)) normalized.unshift(legacy);
@@ -102,12 +114,35 @@ function getLocalDraft(id) {
 
 export function createDraftManager(elements, editorController) {
   let currentDraftId = "";
+  let currentDraftMetadata = normalizeDraftMetadata();
   let summaries = [];
   let serverAvailable = canUseServerStorage();
 
   function setCurrentDraft(draft) {
     currentDraftId = draft?.id || "";
-    elements.currentDraftTitle.textContent = draft?.title || "未命名草稿";
+    currentDraftMetadata = normalizeDraftMetadata(draft);
+    elements.currentDraftTitle.textContent = currentDraftMetadata.title || "未命名草稿";
+  }
+
+  function updateCurrentMetadata(metadata = {}) {
+    currentDraftMetadata = normalizeDraftMetadata({ ...currentDraftMetadata, ...metadata });
+    elements.currentDraftTitle.textContent = currentDraftMetadata.title || "未命名草稿";
+    return { ...currentDraftMetadata };
+  }
+
+  function getCurrentMetadata() {
+    return { ...currentDraftMetadata };
+  }
+
+  async function persistCurrentMetadata(metadata = {}) {
+    updateCurrentMetadata(metadata);
+    if (!currentDraftId) return null;
+    const existing = await getDraft(currentDraftId);
+    if (!existing) return null;
+    const draft = normalizeDraft({ ...existing, ...currentDraftMetadata, id: currentDraftId });
+    const summary = await updateDraftOnStore(currentDraftId, draft);
+    setCurrentDraft({ ...draft, ...summary });
+    return summary;
   }
 
   async function fetchSummaries() {
@@ -216,11 +251,13 @@ export function createDraftManager(elements, editorController) {
       showToast("正文为空", "未保存");
       return null;
     }
-    const currentTitle = elements.currentDraftTitle.textContent || "";
+    const currentTitle = currentDraftMetadata.title || elements.currentDraftTitle.textContent || "";
     const title = options.title || (currentDraftId && currentTitle !== "未命名草稿" ? currentTitle : createTitle(html));
     const draft = normalizeDraft({
       id: options.saveAs ? createId("draft") : currentDraftId || createId("draft"),
       title,
+      author: currentDraftMetadata.author,
+      digest: currentDraftMetadata.digest,
       html,
     });
     const summary = currentDraftId && !options.saveAs
@@ -271,7 +308,7 @@ export function createDraftManager(elements, editorController) {
     const title = window.prompt("新的草稿标题", draft.title || "未命名草稿");
     if (title === null) return;
     await updateDraftOnStore(id, { ...draft, title: title.trim() || "未命名草稿" });
-    if (currentDraftId === id) elements.currentDraftTitle.textContent = title.trim() || "未命名草稿";
+    if (currentDraftId === id) setCurrentDraft({ ...draft, title: title.trim() || "未命名草稿" });
     await refreshDraftList();
     showToast("草稿已重命名");
   }
@@ -318,6 +355,9 @@ export function createDraftManager(elements, editorController) {
     get currentDraftId() {
       return currentDraftId;
     },
+    getCurrentMetadata,
+    updateCurrentMetadata,
+    persistCurrentMetadata,
     setCurrentDraft,
     saveCurrent,
     saveAs,

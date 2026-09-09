@@ -11,15 +11,26 @@ export function clearRecovery() {
   removeLocalKey(RECOVERY_KEY);
 }
 
-export function createAutosave(editorController, getCurrentDraftId) {
+export function normalizeRecoveryContext(current) {
+  const context = typeof current === "string" ? { draftId: current } : current || {};
+  return {
+    draftId: String(context.draftId || ""),
+    title: String(context.title || "").trim().slice(0, 80),
+    author: String(context.author || "").trim().slice(0, 16),
+    digest: String(context.digest || "").trim().slice(0, 128),
+  };
+}
+
+export function createAutosave(editorController, getCurrentDraftContext) {
   let storageWarningShown = false;
 
   function saveTemporary() {
     const html = sanitizeEditorHtml(editorController.getHtml());
+    const context = normalizeRecoveryContext(getCurrentDraftContext?.());
     const saved = writeLocalJson(RECOVERY_KEY, {
       html,
       updatedAt: new Date().toISOString(),
-      draftId: getCurrentDraftId(),
+      ...context,
       sourceMode: editorController.sourceMode,
     });
     if (!saved && !storageWarningShown) {
