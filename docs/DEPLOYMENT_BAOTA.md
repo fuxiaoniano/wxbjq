@@ -5,6 +5,7 @@
 ```text
 网站：https://fuxiaonian.net
 编辑器：https://fuxiaonian.net/wechat-editor/public/
+视频下载页：https://fuxiaonian.net/wechat-editor/public/video-downloader/
 项目目录：/www/wwwroot/fuxiaonian.net/wechat-editor
 Node 内部端口：8090
 ```
@@ -27,6 +28,8 @@ npm ci --omit=dev
 ```
 
 `node_modules` 不需要从本地上传，服务器会根据 `package-lock.json` 安装。
+
+视频下载页解析抖音链接时需要 Chrome 或 Chromium。部署前可运行 `which google-chrome-stable || which google-chrome || which chromium || which chromium-browser` 检查；如浏览器安装在其他位置，请在 `.env` 中设置 `VIDEO_DOWNLOADER_CHROME_PATH`。
 
 ## 2. 创建生产环境配置
 
@@ -158,6 +161,7 @@ location /wechat-editor/public/ {
 ```text
 https://fuxiaonian.net/wechat-editor/public/api/health
 https://fuxiaonian.net/wechat-editor/public/
+https://fuxiaonian.net/wechat-editor/public/video-downloader/
 ```
 
 然后在页面中：

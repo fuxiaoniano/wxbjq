@@ -19,6 +19,7 @@ const {
 const { applySecurityHeaders, sendError, sendJson, sendNoContent } = require("./responses");
 const { handleMembershipApi } = require("./membership/controller");
 const { handleWechatApi } = require("./wechat/controller");
+const { handleVideoDownloaderApi } = require("./video-downloader/controller");
 const { logError } = require("./logging");
 const {
   createTemplate,
@@ -137,6 +138,7 @@ async function handleApi(req, res, requestUrl, config, pathname) {
   if (await handleMembershipApi(req, res, requestUrl, config, pathname)) return;
   if (await handleAdminApi(req, res, requestUrl, config, pathname, readBody)) return;
   if (await handleWechatApi(req, res, requestUrl, config, pathname, readBody)) return;
+  if (await handleVideoDownloaderApi(req, res, config, pathname, readBody)) return;
 
   if (pathname === "/api/drafts" && method === "GET") {
     sendJson(res, 200, await listDrafts(config, Object.fromEntries(requestUrl.searchParams)));
@@ -262,7 +264,12 @@ async function handleStatic(req, res, config, pathname) {
     return;
   }
 
-  const file = resolvePublicFile(pathname, config);
+  const standalonePath = pathname === "/video-downloader"
+    || pathname === "/video-downloader/"
+    || pathname === "/video-downloader.html"
+    ? "/video-downloader/index.html"
+    : pathname;
+  const file = resolvePublicFile(standalonePath, config);
   if (!file.ok) {
     sendError(res, file.statusCode, file.code, file.message);
     return;

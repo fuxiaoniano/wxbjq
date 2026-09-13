@@ -24,6 +24,15 @@
 - 独立管理后台与受保护的站点所有者账号。
 - 一个会员绑定多个公众号、凭据认证加密和持久化 Access Token 缓存。
 - 将当前文章预览并保存到微信公众号草稿箱，支持图片转换、配额控制和幂等提交。
+- 独立的视频批量下载页，支持抖音无 App Logo 原视频链接和 `adsmind.gdtimg.com` 直链，支持批量任务、文件夹选择与自定义重命名。
+
+视频下载页与编辑器前端文件分开存放在 `public/video-downloader/`，线上入口为：
+
+```text
+https://fuxiaonian.net/wechat-editor/public/video-downloader/
+```
+
+解析抖音链接需要服务器安装 Chrome 或 Chromium；也可以通过 `VIDEO_DOWNLOADER_CHROME_PATH` 指定浏览器可执行文件。
 
 ## 本次升级内容
 
@@ -55,6 +64,12 @@
 ├── public/
 │   ├── index.html
 │   ├── styles.css
+│   ├── video-downloader/
+│   │   ├── index.html
+│   │   ├── styles.css
+│   │   ├── app.js
+│   │   ├── config.js
+│   │   └── core.js
 │   └── js/
 │       ├── app.js
 │       ├── api.js

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="app-base-path" content="/" />
+    <meta name="deployment-mode" content="local" />
+    <meta name="server-storage-enabled" content="true" />
+    <meta name="auth-enabled" content="true" />
+    <meta name="csrf-cookie-name" content="wechat_editor_csrf" />
+    <meta name="wechat-enabled" content="false" />
+    <title>原视频批量下载</title>
+    <link rel="stylesheet" href="./styles.css?v=1.2.0" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="page-header">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="img">
+            <path d="M12 3v11m0 0 4-4m-4 4-4-4M5 18h14" />
+          </svg>
+        </div>
+        <div>
+          <p class="eyebrow">独立工具</p>
+          <h1>原视频批量下载</h1>
+          <p class="subtitle">支持抖音无 App Logo 原视频与 adsmind 高清直链，一次保存全部文件。</p>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="批量下载设置">
+        <div class="input-panel">
+          <div class="section-heading">
+            <div>
+              <span class="step-number">01</span>
+              <h2>粘贴视频链接</h2>
+            </div>
+            <button class="text-button" id="clearButton" type="button">清空</button>
+          </div>
+          <fieldset class="source-picker">
+            <legend>选择链接类型</legend>
+            <div class="source-options">
+              <label class="source-option">
+                <input type="radio" name="sourceType" value="douyin" checked />
+                <span>
+                  <strong>抖音链接</strong>
+                  <small>douyin.com/video/…</small>
+                </span>
+              </label>
+              <label class="source-option">
+                <input type="radio" name="sourceType" value="adsmind" />
+                <span>
+                  <strong>adsmind 直链</strong>
+                  <small>adsmind.gdtimg.com</small>
+                </span>
+              </label>
+            </div>
+          </fieldset>
+          <label class="sr-only" for="urlInput">视频链接列表</label>
+          <textarea
+            id="urlInput"
+            rows="11"
+            spellcheck="false"
+            placeholder="粘贴抖音视频链接，每行一条；也支持 Markdown 表格或混合文本。"
+          ></textarea>
+          <div class="input-summary" aria-live="polite">
+            <span id="linkCount">等待粘贴链接</span>
+            <span id="inputHint">自动解析不带抖音 App Logo 的原视频流</span>
+          </div>
+        </div>
+
+        <aside class="action-panel">
+          <div class="action-section">
+            <div class="section-heading compact">
+              <div>
+                <span class="step-number">02</span>
+                <h2>选择保存位置</h2>
+              </div>
+            </div>
+            <button class="folder-button" id="chooseFolderButton" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3.5 7.5h6l2 2h9v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7.5Zm0 0V6a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v1.5" />
+              </svg>
+              <span>
+                <strong id="folderName">选择本地文件夹</strong>
+                <small>文件直接写入，不经过转码</small>
+              </span>
+            </button>
+            <label class="rename-field" for="renamePattern">
+              <span>重命名规则 <small>可选</small></span>
+              <input id="renamePattern" type="text" value="{原名}" maxlength="100" spellcheck="false" />
+              <small>支持 {序号}、{原名}、{日期}，例如：素材_{序号}_{日期}</small>
+              <output id="renamePreview" for="renamePattern">示例：video.mp4</output>
+            </label>
+          </div>
+
+          <div class="action-section start-section">
+            <div class="section-heading compact">
+              <div>
+                <span class="step-number">03</span>
+                <h2>开始下载</h2>
+              </div>
+            </div>
+            <button class="primary-button" id="startButton" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 20h14" /></svg>
+              <span>下载全部视频</span>
+            </button>
+            <button class="secondary-button" id="cancelButton" type="button" hidden>停止下载</button>
+            <p class="privacy-note">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12v10H6V10Z" /></svg>
+              目录权限仅用于本次页面会话
+            </p>
+          </div>
+        </aside>
+      </section>
+
+      <section class="queue-panel" aria-labelledby="queueTitle">
+        <div class="queue-header">
+          <div>
+            <p class="eyebrow">下载队列</p>
+            <h2 id="queueTitle">准备就绪</h2>
+          </div>
+          <div class="queue-stats" id="queueStats" aria-live="polite"></div>
+        </div>
+        <div class="empty-state" id="emptyState">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 18h14" /></svg>
+          <p>粘贴链接后，下载任务会显示在这里。</p>
+        </div>
+        <ol class="download-list" id="downloadList"></ol>
+      </section>
+
+      <footer>
+        <span>原文件直存 · 自动去重 · 同名文件自动避让</span>
+        <a href="https://fuxiaonian.net/">返回主站</a>
+      </footer>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="./app.js?v=1.2.0"></script>
+  </body>
+</html>
