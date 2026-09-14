@@ -129,3 +129,36 @@ export function formatBytes(bytes) {
   const amount = value / 1024 ** index;
   return `${amount >= 10 || index === 0 ? amount.toFixed(0) : amount.toFixed(1)} ${units[index]}`;
 }
+
+export async function runDownloadPipeline(items, options) {
+  const readiness = items.map(() => {
+    let release;
+    const promise = new Promise((resolve) => {
+      release = resolve;
+    });
+    return { promise, release };
+  });
+  let downloadCursor = 0;
+
+  const resolver = async () => {
+    for (let index = 0; index < items.length; index += 1) {
+      if (options.isCancelled()) break;
+      await options.resolve(items[index]);
+      readiness[index].release();
+    }
+    for (const gate of readiness) gate.release();
+  };
+
+  const worker = async () => {
+    while (downloadCursor < items.length) {
+      const index = downloadCursor;
+      downloadCursor += 1;
+      await readiness[index].promise;
+      if (options.isCancelled()) return;
+      if (items[index].status === "ready") await options.download(items[index]);
+    }
+  };
+
+  const workerCount = Math.max(1, Math.min(items.length, options.downloadConcurrency || 2));
+  await Promise.all([resolver(), ...Array.from({ length: workerCount }, () => worker())]);
+}

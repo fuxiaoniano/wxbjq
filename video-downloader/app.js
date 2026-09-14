@@ -4,6 +4,7 @@ import {
   filenameFromUrl,
   formatBytes,
   renamedFilename,
+  runDownloadPipeline,
   uniqueFilename,
 } from "./core.js";
 
@@ -55,9 +56,10 @@ function showToast(message) {
 }
 
 function statusLabel(item) {
+  if (item.status === "resolving") return "解析中";
+  if (item.status === "ready") return "待下载";
   if (item.status === "downloading") {
     if (item.total > 0) return `${Math.min(100, Math.round((item.loaded / item.total) * 100))}%`;
-    if (item.sourceType === "douyin") return "解析中";
     return item.loaded > 0 ? formatBytes(item.loaded) : "下载中";
   }
   return {
@@ -245,6 +247,7 @@ async function downloadItem(item) {
         headers: { "Content-Type": "application/json", "X-Editor-Request": "1" },
         body: JSON.stringify({
           url: item.url,
+          resolvedUrl: item.resolvedUrl || undefined,
           filename: item.filename,
           outputDirectory: state.outputDirectory,
         }),
@@ -262,7 +265,7 @@ async function downloadItem(item) {
     const response = await fetch(apiUrl("/video-download"), {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Editor-Request": "1" },
-      body: JSON.stringify({ url: item.url }),
+      body: JSON.stringify({ url: item.url, resolvedUrl: item.resolvedUrl || undefined }),
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(await responseError(response));
@@ -302,6 +305,39 @@ async function downloadItem(item) {
   }
 }
 
+async function resolveItem(item) {
+  item.error = "";
+  if (item.sourceType !== "douyin") {
+    item.status = "ready";
+    renderQueue();
+    return;
+  }
+
+  const controller = new AbortController();
+  state.controllers.add(controller);
+  item.status = "resolving";
+  renderQueue();
+  try {
+    const response = await fetch(apiUrl("/video-download/resolve"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Editor-Request": "1" },
+      body: JSON.stringify({ url: item.url }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(await responseError(response));
+    const payload = await response.json();
+    if (!payload.resolvedUrl) throw new Error("未能解析抖音原视频地址");
+    item.resolvedUrl = payload.resolvedUrl;
+    item.status = "ready";
+  } catch (error) {
+    item.status = controller.signal.aborted || state.cancelled ? "cancelled" : "error";
+    item.error = item.status === "cancelled" ? "解析已停止" : (error.message || "解析失败");
+  } finally {
+    state.controllers.delete(controller);
+    renderQueue();
+  }
+}
+
 async function startDownloads() {
   if ((!state.directoryHandle && !state.outputDirectory) || state.running) return;
   const pending = state.items.filter((item) => item.status !== "done");
@@ -318,6 +354,7 @@ async function startDownloads() {
       item.error = "";
       item.loaded = 0;
       item.total = 0;
+      item.resolvedUrl = "";
     }
   } catch (error) {
     showToast("无法读取文件夹内容，请重新选择文件夹。");
@@ -328,16 +365,12 @@ async function startDownloads() {
   state.cancelled = false;
   updateControls();
   renderQueue();
-  let cursor = 0;
-  const worker = async () => {
-    while (!state.cancelled && cursor < pending.length) {
-      const item = pending[cursor];
-      cursor += 1;
-      await downloadItem(item);
-    }
-  };
-  const workerCount = pending.some((item) => item.sourceType === "douyin") ? 1 : 2;
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  await runDownloadPipeline(pending, {
+    resolve: resolveItem,
+    download: downloadItem,
+    downloadConcurrency: 2,
+    isCancelled: () => state.cancelled,
+  });
   if (state.cancelled) {
     for (const item of pending) {
       if (item.status === "queued") item.status = "cancelled";

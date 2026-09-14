@@ -90,6 +90,12 @@ test("protected video stream endpoint works", async () => {
     assert.equal(douyinResponse.status, 200);
     assert.deepEqual(new Uint8Array(await douyinResponse.arrayBuffer()), Uint8Array.from([0, 1, 2, 3]));
 
+    const resolved = await app.post("/api/video-download/resolve", {
+      url: "https://www.douyin.com/video/7660743515634175295",
+    });
+    assert.equal(resolved.response.status, 200);
+    assert.equal(resolved.payload.resolvedUrl, "https://v26-web.douyinvod.com/source/?br=3000");
+
     const outputDirectory = path.dirname(app.config.dataDir);
     const saved = await app.post("/api/video-download/save", {
       url: "https://adsmind.gdtimg.com/file.mp4",
@@ -140,6 +146,38 @@ test("browser link extraction handles Markdown tables, escapes, and duplicates",
     "素材_03_20260913_clip.f0.mp4",
   );
   assert.equal(module.renamedFilename("自定义名称.mp4", "clip.mp4", 1, 1), "自定义名称.mp4");
+
+  const items = [{ id: 1, status: "queued" }, { id: 2, status: "queued" }, { id: 3, status: "queued" }];
+  const events = [];
+  let releaseFirstDownload;
+  let markFirstDownloadStarted;
+  const firstDownloadStarted = new Promise((resolve) => {
+    markFirstDownloadStarted = resolve;
+  });
+  await module.runDownloadPipeline(items, {
+    resolve: async (item) => {
+      events.push(`resolve-${item.id}`);
+      item.status = "ready";
+      if (item.id === 2) {
+        await firstDownloadStarted;
+        releaseFirstDownload();
+      }
+    },
+    download: async (item) => {
+      events.push(`download-${item.id}-start`);
+      if (item.id === 1) {
+        markFirstDownloadStarted();
+        await new Promise((resolve) => {
+          releaseFirstDownload = resolve;
+        });
+      }
+      events.push(`download-${item.id}-end`);
+      item.status = "done";
+    },
+    downloadConcurrency: 2,
+    isCancelled: () => false,
+  });
+  assert.ok(events.indexOf("resolve-2") < events.indexOf("download-1-end"));
 });
 
 test("downloader UI remains isolated from the editor assets", () => {

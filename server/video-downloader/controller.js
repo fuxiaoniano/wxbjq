@@ -378,6 +378,7 @@ function createSizeLimitStream() {
 async function handleVideoDownloaderApi(req, res, config, pathname, readBody) {
   const supportedPath = [
     "/api/video-download",
+    "/api/video-download/resolve",
     "/api/video-download/folder-picker",
     "/api/video-download/save",
   ].includes(pathname);
@@ -400,6 +401,11 @@ async function handleVideoDownloaderApi(req, res, config, pathname, readBody) {
   }
 
   const inputUrl = parseVideoUrl(body.url);
+  if (pathname === "/api/video-download/resolve") {
+    const sourceUrl = await resolveVideoUrl(inputUrl, config);
+    sendJson(res, 200, { resolvedUrl: sourceUrl.toString() });
+    return true;
+  }
   let outputDirectory = "";
   if (pathname === "/api/video-download/save") {
     requireLocalRequest(req, config);
@@ -415,7 +421,12 @@ async function handleVideoDownloaderApi(req, res, config, pathname, readBody) {
   res.once("close", abortOnDisconnect);
 
   try {
-    const sourceUrl = await resolveVideoUrl(inputUrl, config);
+    if (body.resolvedUrl && !isDouyinPageUrl(inputUrl)) {
+      throw createHttpError(400, "INVALID_RESOLVED_VIDEO", "预解析地址仅适用于抖音视频");
+    }
+    const sourceUrl = body.resolvedUrl
+      ? parseMediaUrl(body.resolvedUrl)
+      : await resolveVideoUrl(inputUrl, config);
     const { response, finalUrl } = await fetchVideo(sourceUrl, {
       fetchImpl: config.videoDownloadFetch,
       referer: isDouyinPageUrl(inputUrl) ? inputUrl.toString() : "https://ad.qq.com/",
