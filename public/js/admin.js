@@ -24,6 +24,9 @@ const elements = {
   wechatRows: qs("#adminWechatRows"),
   auditList: qs("#adminPageAuditList"),
   refreshAudit: qs("#refreshAdminAuditBtn"),
+  refreshVisits: qs("#refreshVisitStatsBtn"),
+  editorVisitCount: qs("#editorVisitCount"),
+  downloaderVisitCount: qs("#downloaderVisitCount"),
 };
 
 elements.editorLink.href = withBasePath("/");
@@ -265,6 +268,18 @@ async function loadAudit() {
   }
 }
 
+async function loadVisitStats() {
+  elements.editorVisitCount.textContent = "--";
+  elements.downloaderVisitCount.textContent = "--";
+  try {
+    const payload = await apiJson("/admin/visit-stats");
+    elements.editorVisitCount.textContent = Number(payload.editor || 0).toLocaleString("zh-CN");
+    elements.downloaderVisitCount.textContent = Number(payload.videoDownloader || 0).toLocaleString("zh-CN");
+  } catch (error) {
+    setFeedback(error.message || "访问统计读取失败", true);
+  }
+}
+
 elements.tabs.addEventListener("click", (event) => {
   const button = event.target.closest("[data-admin-view]");
   if (!button) return;
@@ -272,11 +287,13 @@ elements.tabs.addEventListener("click", (event) => {
   for (const tab of elements.tabs.querySelectorAll("[data-admin-view]")) tab.setAttribute("aria-selected", String(tab === button));
   for (const panel of document.querySelectorAll("[data-admin-panel]")) panel.hidden = panel.dataset.adminPanel !== view;
   if (view === "audit") loadAudit();
+  if (view === "visits") loadVisitStats();
 });
 
 elements.userSelect.addEventListener("change", renderSelectedUser);
 elements.refresh.addEventListener("click", loadData);
 elements.refreshAudit.addEventListener("click", loadAudit);
+elements.refreshVisits.addEventListener("click", loadVisitStats);
 elements.planForm.elements.id.addEventListener("change", fillPlanForm);
 elements.featureForm.elements.id.addEventListener("change", fillFeatureForm);
 elements.planFeatureForm.elements.planId.addEventListener("change", fillPlanFeatureForm);

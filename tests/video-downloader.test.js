@@ -154,6 +154,18 @@ test("downloader visitor count is persisted and incremented atomically", async (
   }
 });
 
+test("editor visitor count is independent from downloader visits", async () => {
+  const app = await createTestApp();
+  try {
+    const editorVisit = await app.post("/api/editor-visits", {});
+    assert.equal(editorVisit.payload.count, 1);
+    assert.equal((await app.json("/api/editor-visits")).response.status, 404);
+    assert.equal((await app.json("/api/admin/visit-stats")).response.status, 401);
+  } finally {
+    await app.close();
+  }
+});
+
 test("browser link extraction handles Markdown tables, escapes, and duplicates", async () => {
   const source = path.join(rootDir, "video-downloader", "core.js");
   const sourceText = fs.readFileSync(source, "utf8");

@@ -20,6 +20,7 @@ const { applySecurityHeaders, sendError, sendJson, sendNoContent } = require("./
 const { handleMembershipApi } = require("./membership/controller");
 const { handleWechatApi } = require("./wechat/controller");
 const { handleVideoDownloaderApi } = require("./video-downloader/controller");
+const { recordVisit } = require("./video-downloader/visits");
 const { logError } = require("./logging");
 const {
   createTemplate,
@@ -126,6 +127,13 @@ async function handleApi(req, res, requestUrl, config, pathname) {
       },
       wechat: { enabled: config.wechat.enabled },
     });
+    return;
+  }
+
+  if (pathname === "/api/editor-visits" && method === "POST") {
+    verifyWriteRequest(req, config, { requireStorage: false });
+    await readBody(req, config);
+    sendJson(res, 200, { count: await recordVisit(config, "editor") });
     return;
   }
 

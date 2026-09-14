@@ -39,6 +39,7 @@
           <button type="button" data-admin-view="users" aria-selected="true">用户与会员</button>
           <button type="button" data-admin-view="catalog" aria-selected="false">套餐与功能</button>
           <button type="button" data-admin-view="wechat" aria-selected="false">公众号</button>
+          <button type="button" data-admin-view="visits" aria-selected="false">访问统计</button>
           <button type="button" data-admin-view="audit" aria-selected="false">审计日志</button>
         </nav>
         <p class="form-feedback" id="adminPageFeedback" role="status" hidden></p>
@@ -116,12 +117,20 @@
           <div class="admin-table-wrap"><table class="admin-data-table"><thead><tr><th>用户</th><th>公众号</th><th>AppID</th><th>状态</th><th>默认</th><th>最后验证</th></tr></thead><tbody id="adminWechatRows"></tbody></table></div>
         </section>
 
+        <section class="admin-page-panel" data-admin-panel="visits" hidden>
+          <div class="admin-section-heading"><div><h2>访问人数</h2><p>同一浏览器只计一次，不记录 IP、账号或访问明细。</p></div><button class="button ghost" id="refreshVisitStatsBtn" type="button">刷新</button></div>
+          <div class="visit-stats-grid">
+            <div class="visit-stat"><span>微信编辑器</span><strong id="editorVisitCount">--</strong></div>
+            <div class="visit-stat"><span>视频下载页</span><strong id="downloaderVisitCount">--</strong></div>
+          </div>
+        </section>
+
         <section class="admin-page-panel" data-admin-panel="audit" hidden>
           <div class="admin-section-heading"><h2>审计日志</h2><button class="button ghost" id="refreshAdminAuditBtn" type="button">刷新</button></div>
           <div class="audit-list" id="adminPageAuditList"></div>
         </section>
       </div>
     </main>
-    <script type="module" src="./js/admin.js"></script>
+    <script type="module" src="./js/admin.js?v=2.3.4"></script>
   </body>
 </html>

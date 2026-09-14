@@ -1,4 +1,4 @@
-import { appConfig, withBasePath } from "./config.js";
+import { apiUrl, appConfig } from "./config.js";
 import { initAuthUI } from "./auth.js";
 import { bindBackupTools } from "./backup.js";
 import { bindCopyReport, beginCopyArticle } from "./clipboard.js?v=2.2.0";
@@ -90,6 +90,28 @@ const elements = {
   homeLink: qs("#homeLink"),
 };
 
+const EDITOR_VISITOR_STORAGE_KEY = "wechat-editor-visitor-v1";
+
+async function syncEditorVisitorCount() {
+  try {
+    if (window.localStorage.getItem(EDITOR_VISITOR_STORAGE_KEY) === "1") return;
+  } catch (error) {
+    return;
+  }
+
+  try {
+    const response = await fetch(apiUrl("/editor-visits"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Editor-Request": "1" },
+      body: "{}",
+    });
+    if (!response.ok) return;
+    window.localStorage.setItem(EDITOR_VISITOR_STORAGE_KEY, "1");
+  } catch (error) {
+    // Visitor statistics are optional and must not interrupt editing.
+  }
+}
+
 initSelection(elements.editor);
 
 let autosave = null;
@@ -121,7 +143,8 @@ bindCopyReport(elements);
 bindImageTools(elements, editorController);
 bindBackupTools(elements, editorController, draftManager, templateManager);
 
-elements.homeLink.href = withBasePath("/");
+elements.homeLink.href = "https://fuxiaonian.net/";
+void syncEditorVisitorCount();
 elements.sourceModeBtn.addEventListener("click", () => editorController.toggleSourceMode());
 elements.copyBtn.addEventListener("click", () => beginCopyArticle(editorController, elements));
 elements.clearBtn.addEventListener("click", () => {

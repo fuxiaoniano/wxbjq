@@ -2472,6 +2472,11 @@ body.modal-open {
   margin-top: 16px;
 }
 
+.visit-stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 14px; }
+.visit-stat { padding: 18px; background: rgba(255, 255, 255, 0.45); border: 1px solid var(--line); border-radius: 8px; }
+.visit-stat span { display: block; color: var(--muted); font-size: 13px; }
+.visit-stat strong { display: block; margin-top: 8px; font-size: 28px; font-variant-numeric: tabular-nums; }
+
 @media (max-width: 900px) {
   .admin-page-header,
   .admin-page-actions,

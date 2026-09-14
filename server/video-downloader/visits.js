@@ -3,8 +3,9 @@
 const path = require("node:path");
 const { readJsonFileOptional, withJsonFileLock, writeJsonAtomic } = require("../storage");
 
-function visitsFile(config) {
-  return path.join(config.dataDir, "video-downloader-visits.json");
+function visitsFile(config, surface = "video-downloader") {
+  const filename = surface === "editor" ? "editor-visits.json" : "video-downloader-visits.json";
+  return path.join(config.dataDir, filename);
 }
 
 function normalizeCount(value) {
@@ -12,13 +13,13 @@ function normalizeCount(value) {
   return Number.isSafeInteger(count) && count >= 0 ? count : 0;
 }
 
-async function getVisitCount(config) {
-  const state = await readJsonFileOptional(visitsFile(config), {});
+async function getVisitCount(config, surface) {
+  const state = await readJsonFileOptional(visitsFile(config, surface), {});
   return normalizeCount(state?.count);
 }
 
-async function recordVisit(config) {
-  const filePath = visitsFile(config);
+async function recordVisit(config, surface) {
+  const filePath = visitsFile(config, surface);
   return withJsonFileLock(filePath, async () => {
     const state = await readJsonFileOptional(filePath, {});
     const count = normalizeCount(state?.count) + 1;

@@ -5,6 +5,7 @@ const { getAuthService } = require("../auth/service");
 const { sendJson, sendNoContent } = require("../responses");
 const { verifyWriteRequest } = require("../security");
 const { getAdminService } = require("./service");
+const { getVisitCount } = require("../video-downloader/visits");
 
 async function handleAdminApi(req, res, requestUrl, config, pathname, readBody) {
   if (!pathname.startsWith("/api/admin/")) return false;
@@ -19,6 +20,15 @@ async function handleAdminApi(req, res, requestUrl, config, pathname, readBody) 
     auth.requireCsrf(req, authContext);
   }
   const admin = getAdminService(config);
+
+  if (pathname === "/api/admin/visit-stats" && method === "GET") {
+    const [editor, videoDownloader] = await Promise.all([
+      getVisitCount(config, "editor"),
+      getVisitCount(config),
+    ]);
+    sendJson(res, 200, { editor, videoDownloader });
+    return true;
+  }
 
   if (pathname === "/api/admin/users" && method === "GET") {
     sendJson(res, 200, { items: await admin.listUsers() });
