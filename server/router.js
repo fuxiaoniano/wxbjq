@@ -264,12 +264,7 @@ async function handleStatic(req, res, config, pathname) {
     return;
   }
 
-  const standalonePath = pathname === "/video-downloader"
-    || pathname === "/video-downloader/"
-    || pathname === "/video-downloader.html"
-    ? "/video-downloader/index.html"
-    : pathname;
-  const file = resolvePublicFile(standalonePath, config);
+  const file = resolvePublicFile(pathname, config);
   if (!file.ok) {
     sendError(res, file.statusCode, file.code, file.message);
     return;

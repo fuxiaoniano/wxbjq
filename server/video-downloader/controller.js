@@ -236,7 +236,7 @@ function requireLocalRequest(req, config) {
 }
 
 async function pickNativeFolder(config) {
-  if (process.platform !== "win32") {
+  if (process.platform !== "win32" && !config.videoFolderPicker) {
     throw createHttpError(501, "NATIVE_PICKER_UNAVAILABLE", "当前系统不支持原生文件夹选择器");
   }
   const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");

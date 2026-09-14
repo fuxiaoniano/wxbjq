@@ -26,10 +26,10 @@
 - 将当前文章预览并保存到微信公众号草稿箱，支持图片转换、配额控制和幂等提交。
 - 独立的视频批量下载页，支持抖音无 App Logo 原视频链接和 `adsmind.gdtimg.com` 直链，支持批量任务、文件夹选择与自定义重命名。
 
-视频下载页与编辑器前端文件分开存放在 `public/video-downloader/`，线上入口为：
+视频下载页与编辑器前端文件分开存放在项目根目录的 `video-downloader/`，线上入口为：
 
 ```text
-https://fuxiaonian.net/wechat-editor/public/video-downloader/
+https://fuxiaonian.net/wechat-editor/video-downloader/
 ```
 
 解析抖音链接需要服务器安装 Chrome 或 Chromium；也可以通过 `VIDEO_DOWNLOADER_CHROME_PATH` 指定浏览器可执行文件。
@@ -49,10 +49,11 @@ https://fuxiaonian.net/wechat-editor/public/video-downloader/
 - 增加 SMTP Provider、一次性验证令牌、账号安全审计和登录/邮件限流。
 - 增加会员套餐、Feature/Entitlement、配额和管理员 API。
 - 增加微信公众号多账号绑定、AES-256-GCM 凭据加密和租户隔离。
-- `2.2.0` 完成上线前审查：修复并发草稿/模板写入、微信草稿重复提交、远端成功后的本地故障误报、会员时间边界、主题换色和异常回退逻辑。
+- `2.3.0` 增加独立视频批量下载页；页面文件与编辑器 `public/` 目录隔离，使用独立访问路径。
 - `2.2.3` 完成代码与生产目录清理，修复草稿恢复元数据遗漏，并升级邮件依赖以消除已知安全漏洞。
 - `2.2.2` 修复微信 CDN 封面图片下载兼容性，并让标题、作者、摘要随浏览器草稿保存和恢复。
 - `2.2.1` 支持直接复用微信后台正文图片链接，并修复保存到公众号弹窗在移动端和低高度窗口中内容被裁切的问题。
+- `2.2.0` 完成上线前审查：修复并发草稿/模板写入、微信草稿重复提交、远端成功后的本地故障误报、会员时间边界、主题换色和异常回退逻辑。
 - 生产公网环境默认关闭未认证的共享草稿、模板与备份 API；账号、会员和公众号数据仍由受保护的服务端存储提供。
 - 加强 HTML/CSS/链接清洗、远程图片下载上限、微信响应流大小和 JSON 备份恢复保护。
 - 移除编辑器页面中已被独立管理后台取代的重复管理界面和代码。
@@ -61,15 +62,15 @@ https://fuxiaonian.net/wechat-editor/public/video-downloader/
 
 ```text
 .
+├── video-downloader/
+│   ├── index.html
+│   ├── styles.css
+│   ├── app.js
+│   ├── config.js
+│   └── core.js
 ├── public/
 │   ├── index.html
 │   ├── styles.css
-│   ├── video-downloader/
-│   │   ├── index.html
-│   │   ├── styles.css
-│   │   ├── app.js
-│   │   ├── config.js
-│   │   └── core.js
 │   └── js/
 │       ├── app.js
 │       ├── api.js
@@ -481,6 +482,16 @@ COOKIE_SECURE=true
 Nginx 示例：
 
 ```nginx
+location = /wechat-editor/video-downloader {
+    return 301 /wechat-editor/video-downloader/;
+}
+
+location ^~ /wechat-editor/video-downloader/ {
+    root /www/wwwroot/fuxiaonian.net;
+    index index.html;
+    try_files $uri $uri/ =404;
+}
+
 location /wechat-editor/public/ {
     client_max_body_size 4m;
 

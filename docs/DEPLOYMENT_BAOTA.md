@@ -5,8 +5,9 @@
 ```text
 网站：https://fuxiaonian.net
 编辑器：https://fuxiaonian.net/wechat-editor/public/
-视频下载页：https://fuxiaonian.net/wechat-editor/public/video-downloader/
+视频下载页：https://fuxiaonian.net/wechat-editor/video-downloader/
 项目目录：/www/wwwroot/fuxiaonian.net/wechat-editor
+视频下载页目录：/www/wwwroot/fuxiaonian.net/wechat-editor/video-downloader
 Node 内部端口：8090
 ```
 
@@ -130,9 +131,19 @@ curl http://127.0.0.1:8090/wechat-editor/public/api/health
 
 ## 4. 配置 Nginx
 
-在宝塔中打开现有站点 `fuxiaonian.net` 的 Nginx 配置，在同一个 `server` 块内加入下面的子路径反向代理，不需要新建子域名站点：
+在宝塔中打开现有站点 `fuxiaonian.net` 的 Nginx 配置，在同一个 `server` 块内加入下面两条独立规则，不需要新建子域名站点：
 
 ```nginx
+location = /wechat-editor/video-downloader {
+    return 301 /wechat-editor/video-downloader/;
+}
+
+location ^~ /wechat-editor/video-downloader/ {
+    root /www/wwwroot/fuxiaonian.net;
+    index index.html;
+    try_files $uri $uri/ =404;
+}
+
 location /wechat-editor/public/ {
     proxy_pass http://127.0.0.1:8090;
     proxy_http_version 1.1;
@@ -150,7 +161,7 @@ location /wechat-editor/public/ {
 }
 ```
 
-这条精确的子路径代理规则会把编辑器请求交给 Node 服务，WordPress 其余路径保持原样。
+第一条规则从独立目录提供视频下载页，第二条规则把编辑器及视频下载 API 请求交给 Node 服务。WordPress 其余路径保持原样。
 
 保存配置。宝塔会检查 Nginx 语法；通过后重载 Nginx。
 
@@ -161,7 +172,7 @@ location /wechat-editor/public/ {
 ```text
 https://fuxiaonian.net/wechat-editor/public/api/health
 https://fuxiaonian.net/wechat-editor/public/
-https://fuxiaonian.net/wechat-editor/public/video-downloader/
+https://fuxiaonian.net/wechat-editor/video-downloader/
 ```
 
 然后在页面中：

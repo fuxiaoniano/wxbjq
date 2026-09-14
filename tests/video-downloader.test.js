@@ -47,7 +47,7 @@ test("video fetch rejects redirects outside the approved host", async () => {
   );
 });
 
-test("standalone downloader page and protected stream endpoint work", async () => {
+test("protected video stream endpoint works", async () => {
   const app = await createTestApp();
   try {
     app.config.videoDownloadFetch = async () => new Response(Uint8Array.from([0, 1, 2, 3]), {
@@ -55,14 +55,6 @@ test("standalone downloader page and protected stream endpoint work", async () =
       headers: { "Content-Type": "video/mp4", "Content-Length": "4" },
     });
     app.config.douyinVideoResolver = async () => new URL("https://v26-web.douyinvod.com/source/?br=3000");
-    const page = await app.request("/video-downloader/");
-    assert.equal(page.status, 200);
-    assert.match(await page.text(), /原视频批量下载/);
-
-    const legacyPage = await app.request("/video-downloader.html");
-    assert.equal(legacyPage.status, 200);
-    assert.match(await legacyPage.text(), /原视频批量下载/);
-
     const rejected = await app.request("/api/video-download", {
       method: "POST",
       headers: { Origin: app.origin, "Content-Type": "application/json" },
@@ -118,7 +110,7 @@ test("standalone downloader page and protected stream endpoint work", async () =
 });
 
 test("browser link extraction handles Markdown tables, escapes, and duplicates", async () => {
-  const source = path.join(rootDir, "public", "video-downloader", "core.js");
+  const source = path.join(rootDir, "video-downloader", "core.js");
   const sourceText = fs.readFileSync(source, "utf8");
   const module = await import(`data:text/javascript;charset=utf-8,${encodeURIComponent(sourceText)}`);
   const text = [
@@ -151,11 +143,12 @@ test("browser link extraction handles Markdown tables, escapes, and duplicates",
 });
 
 test("downloader UI remains isolated from the editor assets", () => {
-  const html = fs.readFileSync(path.join(rootDir, "public", "video-downloader", "index.html"), "utf8");
+  const html = fs.readFileSync(path.join(rootDir, "video-downloader", "index.html"), "utf8");
   assert.match(html, /\.\/styles\.css/);
   assert.match(html, /\.\/app\.js/);
   assert.match(html, /value="douyin" checked/);
   assert.match(html, /value="adsmind"/);
+  assert.match(html, /name="app-base-path" content="\/wechat-editor\/public"/);
   assert.match(html, /https:\/\/fuxiaonian\.net\//);
   assert.doesNotMatch(html, /返回微信编辑器|\.\.\/js\//);
 });
