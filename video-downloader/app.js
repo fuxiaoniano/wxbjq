@@ -24,8 +24,12 @@ const elements = {
   queueStats: document.querySelector("#queueStats"),
   emptyState: document.querySelector("#emptyState"),
   downloadList: document.querySelector("#downloadList"),
+  visitorCount: document.querySelector("#visitorCount"),
+  visitorCountValue: document.querySelector("#visitorCountValue"),
   toast: document.querySelector("#toast"),
 };
+
+const VISITOR_STORAGE_KEY = "wechat-editor-video-downloader-visitor-v1";
 
 const state = {
   directoryHandle: null,
@@ -53,6 +57,35 @@ function showToast(message) {
   state.toastTimer = window.setTimeout(() => {
     elements.toast.hidden = true;
   }, 3200);
+}
+
+async function syncVisitorCount() {
+  let hasVisited = true;
+  let storageAvailable = true;
+  try {
+    hasVisited = window.localStorage.getItem(VISITOR_STORAGE_KEY) === "1";
+  } catch (error) {
+    storageAvailable = false;
+  }
+
+  try {
+    const response = await fetch(apiUrl("/video-download/visits"), hasVisited || !storageAvailable
+      ? { method: "GET", cache: "no-store" }
+      : {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Editor-Request": "1" },
+          body: "{}",
+        });
+    if (!response.ok) return;
+    const payload = await response.json();
+    const count = Number(payload.count);
+    if (!Number.isSafeInteger(count) || count < 0) return;
+    if (!hasVisited && storageAvailable) window.localStorage.setItem(VISITOR_STORAGE_KEY, "1");
+    elements.visitorCountValue.textContent = count.toLocaleString("zh-CN");
+    elements.visitorCount.hidden = false;
+  } catch (error) {
+    // Visitor statistics must never interrupt the downloader workflow.
+  }
 }
 
 function statusLabel(item) {
@@ -420,3 +453,4 @@ window.addEventListener("beforeunload", (event) => {
 });
 
 syncInput();
+void syncVisitorCount();

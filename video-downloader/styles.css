@@ -358,6 +358,8 @@ textarea:disabled { color: var(--muted); cursor: not-allowed; }
 .progress-bar { width: 0; height: 100%; background: var(--primary); border-radius: inherit; transition: width 180ms ease; }
 
 footer { display: flex; justify-content: space-between; gap: 16px; padding: 20px 4px 0; color: var(--muted); font-size: 12px; }
+.footer-meta { display: flex; align-items: center; gap: 14px; }
+.visitor-count { color: #9a9eaa; font-size: 11px; font-variant-numeric: tabular-nums; }
 footer a { color: var(--primary); text-decoration: none; }
 footer a:hover { text-decoration: underline; }
 
@@ -394,6 +396,7 @@ footer a:hover { text-decoration: underline; }
   .action-panel { display: block; }
   .action-section + .action-section { border-top: 1px solid var(--line); border-left: 0; }
   .input-summary, footer { flex-direction: column; }
+  .footer-meta { width: 100%; justify-content: space-between; }
   .source-options { grid-template-columns: 1fr; }
   .queue-header { align-items: flex-start; }
   .download-item { grid-template-columns: 34px minmax(0, 1fr); }

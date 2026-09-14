@@ -133,6 +133,27 @@ test("protected video stream endpoint works", async () => {
   }
 });
 
+test("downloader visitor count is persisted and incremented atomically", async () => {
+  const app = await createTestApp();
+  try {
+    const initial = await app.json("/api/video-download/visits");
+    assert.equal(initial.response.status, 200);
+    assert.equal(initial.payload.count, 0);
+
+    const visits = await Promise.all(
+      Array.from({ length: 8 }, () => app.post("/api/video-download/visits", {})),
+    );
+    assert.deepEqual(visits.map(({ payload }) => payload.count).sort((a, b) => a - b), [1, 2, 3, 4, 5, 6, 7, 8]);
+
+    const current = await app.json("/api/video-download/visits");
+    assert.equal(current.payload.count, 8);
+    const stored = JSON.parse(fs.readFileSync(path.join(app.config.dataDir, "video-downloader-visits.json"), "utf8"));
+    assert.equal(stored.count, 8);
+  } finally {
+    await app.close();
+  }
+});
+
 test("browser link extraction handles Markdown tables, escapes, and duplicates", async () => {
   const source = path.join(rootDir, "video-downloader", "core.js");
   const sourceText = fs.readFileSync(source, "utf8");
@@ -216,5 +237,8 @@ test("downloader UI remains isolated from the editor assets", () => {
   assert.match(html, /value="adsmind"/);
   assert.match(html, /name="app-base-path" content="\/wechat-editor\/public"/);
   assert.match(html, /https:\/\/fuxiaonian\.net\//);
+  assert.match(html, /id="visitorCount"/);
+  const appSource = fs.readFileSync(path.join(rootDir, "video-downloader", "app.js"), "utf8");
+  assert.match(appSource, /wechat-editor-video-downloader-visitor-v1/);
   assert.doesNotMatch(html, /返回微信编辑器|\.\.\/js\//);
 });

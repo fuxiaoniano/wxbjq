@@ -10,6 +10,7 @@ const { pipeline } = require("node:stream/promises");
 const parse5 = require("parse5");
 const { createHttpError, verifyWriteRequest } = require("../security");
 const { applySecurityHeaders, sendError, sendJson } = require("../responses");
+const { getVisitCount, recordVisit } = require("./visits");
 
 const ALLOWED_VIDEO_HOSTS = new Set(["adsmind.gdtimg.com"]);
 const DOUYIN_PAGE_HOSTS = new Set(["douyin.com", "www.douyin.com"]);
@@ -448,8 +449,25 @@ async function handleVideoDownloaderApi(req, res, config, pathname, readBody) {
     "/api/video-download/resolve",
     "/api/video-download/folder-picker",
     "/api/video-download/save",
+    "/api/video-download/visits",
   ].includes(pathname);
   if (!supportedPath) return false;
+
+  if (pathname === "/api/video-download/visits") {
+    if (req.method === "GET") {
+      sendJson(res, 200, { count: await getVisitCount(config) });
+      return true;
+    }
+    if (req.method === "POST") {
+      verifyWriteRequest(req, config, { requireStorage: false });
+      await readBody(req, config);
+      sendJson(res, 200, { count: await recordVisit(config) });
+      return true;
+    }
+    sendError(res, 405, "METHOD_NOT_ALLOWED", "请使用 GET 或 POST 请求读取访问人数");
+    return true;
+  }
+
   if (req.method !== "POST") {
     sendError(res, 405, "METHOD_NOT_ALLOWED", "请使用 POST 请求下载视频");
     return true;
