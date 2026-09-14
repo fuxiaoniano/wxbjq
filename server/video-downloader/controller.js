@@ -13,7 +13,10 @@ const { applySecurityHeaders, sendError, sendJson } = require("../responses");
 
 const ALLOWED_VIDEO_HOSTS = new Set(["adsmind.gdtimg.com"]);
 const DOUYIN_PAGE_HOSTS = new Set(["douyin.com", "www.douyin.com"]);
-const DOUYIN_RENDER_TIMEOUT_MS = 60 * 1000;
+const DOUYIN_SHORT_HOSTS = new Set(["v.douyin.com"]);
+const DOUYIN_SHARE_HOSTS = new Set(["iesdouyin.com", "www.iesdouyin.com"]);
+const DOUYIN_SHORT_LINK_TIMEOUT_MS = 10 * 1000;
+const DOUYIN_RENDER_TIMEOUT_MS = 40 * 1000;
 const DOUYIN_VIRTUAL_TIME_MS = 12 * 1000;
 const CHROME_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 const MAX_REDIRECTS = 4;
@@ -32,11 +35,12 @@ function parseVideoUrl(value) {
   const host = url.hostname.toLowerCase();
   const isDirectVideo = ALLOWED_VIDEO_HOSTS.has(host) && url.pathname.toLowerCase().endsWith(".mp4");
   const douyinMatch = DOUYIN_PAGE_HOSTS.has(host) && url.pathname.match(/^\/video\/(\d+)\/?$/i);
-  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.port || (!isDirectVideo && !douyinMatch)) {
+  const isDouyinShort = DOUYIN_SHORT_HOSTS.has(host) && /^\/[A-Za-z0-9_-]+\/?$/.test(url.pathname);
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.port || (!isDirectVideo && !douyinMatch && !isDouyinShort)) {
     throw createHttpError(
       400,
       "UNSUPPORTED_VIDEO_URL",
-      "仅支持抖音视频页或 adsmind.gdtimg.com 的 MP4 原视频链接",
+      "仅支持抖音视频页、v.douyin.com 分享短链或 adsmind.gdtimg.com 的 MP4 原视频链接",
     );
   }
   url.hash = "";
@@ -45,12 +49,65 @@ function parseVideoUrl(value) {
     url.hostname = "www.douyin.com";
     url.pathname = `/video/${douyinMatch[1]}`;
     url.search = "";
+  } else if (isDouyinShort) {
+    url.protocol = "https:";
+    url.hostname = "v.douyin.com";
+    url.search = "";
   }
   return url;
 }
 
 function isDouyinPageUrl(url) {
   return DOUYIN_PAGE_HOSTS.has(url.hostname.toLowerCase()) && /^\/video\/\d+$/i.test(url.pathname);
+}
+
+function isDouyinShortUrl(url) {
+  return DOUYIN_SHORT_HOSTS.has(url.hostname.toLowerCase());
+}
+
+function douyinVideoIdFromRedirect(value, baseUrl) {
+  let redirected;
+  try {
+    redirected = new URL(value, baseUrl);
+  } catch (error) {
+    return "";
+  }
+  const host = redirected.hostname.toLowerCase();
+  if (DOUYIN_PAGE_HOSTS.has(host)) return redirected.pathname.match(/^\/video\/(\d+)\/?$/i)?.[1] || "";
+  if (DOUYIN_SHARE_HOSTS.has(host)) return redirected.pathname.match(/^\/share\/video\/(\d+)\/?$/i)?.[1] || "";
+  return "";
+}
+
+async function expandDouyinShortUrl(inputUrl, config = {}) {
+  if (!isDouyinShortUrl(inputUrl)) return inputUrl;
+  if (config.douyinShortLinkResolver) {
+    return parseVideoUrl(await config.douyinShortLinkResolver(inputUrl));
+  }
+
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), DOUYIN_SHORT_LINK_TIMEOUT_MS);
+  timeout.unref?.();
+  try {
+    const response = await (config.douyinShortLinkFetch || fetch)(inputUrl, {
+      method: "HEAD",
+      redirect: "manual",
+      signal: abortController.signal,
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    const videoId = douyinVideoIdFromRedirect(response.headers.get("location"), inputUrl);
+    if (!videoId) {
+      throw createHttpError(502, "DOUYIN_SHORT_LINK_INVALID", "抖音分享短链未跳转到有效的视频页面");
+    }
+    return parseVideoUrl(`https://www.douyin.com/video/${videoId}`);
+  } catch (error) {
+    if (error.statusCode) throw error;
+    if (error.name === "AbortError") {
+      throw createHttpError(504, "DOUYIN_SHORT_LINK_TIMEOUT", "抖音分享短链解析超时，请稍后重试");
+    }
+    throw createHttpError(502, "DOUYIN_SHORT_LINK_FAILED", "无法解析抖音分享短链，请稍后重试");
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function parseMediaUrl(value) {
@@ -190,11 +247,21 @@ async function resolveDouyinVideo(url, options = {}) {
 }
 
 async function resolveVideoUrl(inputUrl, config = {}) {
-  if (!isDouyinPageUrl(inputUrl)) return parseMediaUrl(inputUrl);
+  const pageUrl = await expandDouyinShortUrl(inputUrl, config);
+  if (!isDouyinPageUrl(pageUrl)) return parseMediaUrl(pageUrl);
   if (config.douyinVideoResolver) {
-    return parseMediaUrl(await config.douyinVideoResolver(inputUrl));
+    return parseMediaUrl(await config.douyinVideoResolver(pageUrl));
   }
-  return resolveDouyinVideo(inputUrl, { chromePath: config.videoDownloaderChromePath });
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await resolveDouyinVideo(pageUrl, { chromePath: config.videoDownloaderChromePath });
+    } catch (error) {
+      lastError = error;
+      if (!["DOUYIN_VIDEO_NOT_FOUND", "DOUYIN_RENDER_FAILED", "DOUYIN_RENDER_TIMEOUT"].includes(error.code)) throw error;
+    }
+  }
+  throw lastError;
 }
 
 function filenameFromVideoUrl(url) {
@@ -421,7 +488,7 @@ async function handleVideoDownloaderApi(req, res, config, pathname, readBody) {
   res.once("close", abortOnDisconnect);
 
   try {
-    if (body.resolvedUrl && !isDouyinPageUrl(inputUrl)) {
+    if (body.resolvedUrl && !isDouyinPageUrl(inputUrl) && !isDouyinShortUrl(inputUrl)) {
       throw createHttpError(400, "INVALID_RESOLVED_VIDEO", "预解析地址仅适用于抖音视频");
     }
     const sourceUrl = body.resolvedUrl
@@ -429,7 +496,7 @@ async function handleVideoDownloaderApi(req, res, config, pathname, readBody) {
       : await resolveVideoUrl(inputUrl, config);
     const { response, finalUrl } = await fetchVideo(sourceUrl, {
       fetchImpl: config.videoDownloadFetch,
-      referer: isDouyinPageUrl(inputUrl) ? inputUrl.toString() : "https://ad.qq.com/",
+      referer: isDouyinPageUrl(inputUrl) || isDouyinShortUrl(inputUrl) ? inputUrl.toString() : "https://ad.qq.com/",
       signal: abortController.signal,
     });
     if (pathname === "/api/video-download/save") {
@@ -483,6 +550,9 @@ async function handleVideoDownloaderApi(req, res, config, pathname, readBody) {
 module.exports = {
   ALLOWED_VIDEO_HOSTS,
   DOUYIN_PAGE_HOSTS,
+  DOUYIN_SHORT_HOSTS,
+  douyinVideoIdFromRedirect,
+  expandDouyinShortUrl,
   extractDouyinSourceFromHtml,
   fetchVideo,
   findChromeExecutable,

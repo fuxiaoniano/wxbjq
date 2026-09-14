@@ -1,6 +1,7 @@
 // Shared only by the standalone video downloader page.
 const ADS_MIND_HOST = "adsmind.gdtimg.com";
 const DOUYIN_HOSTS = new Set(["douyin.com", "www.douyin.com"]);
+const DOUYIN_SHORT_HOSTS = new Set(["v.douyin.com"]);
 
 function cleanCandidate(value) {
   return String(value || "")
@@ -21,7 +22,11 @@ export function isSupportedVideoUrl(value, sourceType = "adsmind") {
     );
     if (!hasSafeAuthority) return false;
     if (sourceType === "douyin") {
-      return DOUYIN_HOSTS.has(url.hostname.toLowerCase()) && /^\/video\/\d+\/?$/i.test(url.pathname);
+      const host = url.hostname.toLowerCase();
+      return (
+        (DOUYIN_HOSTS.has(host) && /^\/video\/\d+\/?$/i.test(url.pathname)) ||
+        (DOUYIN_SHORT_HOSTS.has(host) && /^\/[A-Za-z0-9_-]+\/?$/.test(url.pathname))
+      );
     }
     return url.hostname.toLowerCase() === ADS_MIND_HOST && url.pathname.toLowerCase().endsWith(".mp4");
   } catch (error) {
@@ -34,7 +39,11 @@ function normalizedVideoUrl(value, sourceType) {
   url.hash = "";
   if (sourceType === "douyin") {
     const videoId = url.pathname.match(/^\/video\/(\d+)\/?$/i)?.[1];
-    return `https://www.douyin.com/video/${videoId}`;
+    if (videoId) return `https://www.douyin.com/video/${videoId}`;
+    url.protocol = "https:";
+    url.hostname = "v.douyin.com";
+    url.search = "";
+    return url.toString();
   }
   return url.toString();
 }

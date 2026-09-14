@@ -9,6 +9,8 @@ const {
   fetchVideo,
   filenameFromVideoUrl,
   extractDouyinSourceFromHtml,
+  douyinVideoIdFromRedirect,
+  expandDouyinShortUrl,
   parseVideoUrl,
   safeRequestedFilename,
 } = require("../server/video-downloader/controller");
@@ -21,10 +23,26 @@ test("video URL validation accepts adsmind MP4 and canonical Douyin video pages"
   assert.equal(filenameFromVideoUrl(valid), "original.f0.mp4");
   const douyin = parseVideoUrl("https://www.douyin.com/video/7660743515634175295");
   assert.equal(douyin.toString(), "https://www.douyin.com/video/7660743515634175295");
+  const short = parseVideoUrl("https://v.douyin.com/ZqRI6p-J388/");
+  assert.equal(short.toString(), "https://v.douyin.com/ZqRI6p-J388/");
   assert.throws(() => parseVideoUrl("http://127.0.0.1/private.mp4"), /仅支持/);
   assert.throws(() => parseVideoUrl("https://adsmind.gdtimg.com/file.txt"), /仅支持/);
   assert.throws(() => parseVideoUrl("https://adsmind.gdtimg.com:8443/file.mp4"), /仅支持/);
   assert.equal(safeRequestedFilename("../CON.mp4"), "_CON.mp4");
+});
+
+test("Douyin share short links expand only to approved video pages", async () => {
+  const short = parseVideoUrl("https://v.douyin.com/ZqRI6p-J388/");
+  const location = "https://www.iesdouyin.com/share/video/7660128643805717705/?region=CN";
+  assert.equal(douyinVideoIdFromRedirect(location, short), "7660128643805717705");
+  assert.equal(douyinVideoIdFromRedirect("https://example.com/video/123", short), "");
+  const expanded = await expandDouyinShortUrl(short, {
+    douyinShortLinkFetch: async () => new Response(null, {
+      status: 302,
+      headers: { Location: location },
+    }),
+  });
+  assert.equal(expanded.toString(), "https://www.douyin.com/video/7660128643805717705");
 });
 
 test("Douyin DOM extraction selects the highest-bitrate no-logo playback source", () => {
@@ -138,6 +156,16 @@ test("browser link extraction handles Markdown tables, escapes, and duplicates",
   assert.equal(douyinResult.duplicateCount, 1);
   assert.equal(douyinResult.unsupportedCount, 1);
   assert.equal(module.filenameFromUrl(douyinResult.links[0]), "douyin_7660743515634175295.mp4");
+
+  const shareText = [
+    "9.97 :9pm 码字的氛围感 https://v.douyin.com/ZqRI6p-J388/ 复制此链接，打开Dou音搜索",
+    "8.99 05/08 奏折手机 https://v.douyin.com/fn3q1WQs2Us/ 复制此链接，直接观看视频",
+  ].join("\n");
+  const shortLinks = module.extractVideoLinks(shareText, "douyin");
+  assert.deepEqual(shortLinks.links, [
+    "https://v.douyin.com/ZqRI6p-J388/",
+    "https://v.douyin.com/fn3q1WQs2Us/",
+  ]);
 
   const used = new Set(["clip.mp4"]);
   assert.equal(module.uniqueFilename("clip.mp4", used), "clip (2).mp4");

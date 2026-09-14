@@ -156,7 +156,7 @@ location /wechat-editor/public/ {
     proxy_redirect off;
     client_max_body_size 4m;
     proxy_connect_timeout 10s;
-    proxy_read_timeout 60s;
+    proxy_read_timeout 90s;
     proxy_send_timeout 60s;
 }
 ```
